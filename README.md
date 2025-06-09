@@ -1,12 +1,12 @@
-# Transaction CLI
+# Budgify
 
 A professional, extensible command-line tool for importing, categorizing, and exporting credit-card transactions into a unified monthly ledger.
 
 ## Overview
 
-**Transaction CLI** centralizes financial data across multiple banks and formats. It enables:
+**Budgify** centralizes financial data across multiple banks and formats. It enables:
 
-* **Seamless imports** from different banks (e.g., Amex Canada, Canadian Tire).
+* **Seamless imports** from different banks (e.g., Amex, Canadian Tire).
 * **Keyword-driven categorization** (restaurants, groceries, fun, fuel).
 * **Flexible exports** (CSV by default; extendable to Excel, databases, etc.).
 * **Plugin-based design** for easy addition of new banks and output formats.
@@ -80,21 +80,17 @@ pip freeze > requirements.txt
 ## Usage
 
 ```bash
-# Exclude payments (default)
-transcli --bank amex \
-         --file ~/Downloads/Summary1.xls \
-         --file ~/Downloads/Summary2.xls \
+# Process a directory of statements and exclude payments (default)
+budgify --dir ~/Downloads/statements \
          --month 2025-05
 
 # Include payments (must be negative amounts)
-transcli --bank canadiantire \
-         --file ~/Downloads/Transactions\ CT.csv \
+transcli --dir ~/Downloads/statements \
          --month 2025-05 \
          --include-payments
 ```
 
-* `--bank`: key from `bank_loaders`.
-* `--file`: one or more statement files.
+* `--dir`: directory containing statement files; filenames match bank keys (e.g., "amex" or "canadiantire").
 * `--month`: target ledger in `YYYY-MM`.
 * `--include-payments`: include payment transactions.
 

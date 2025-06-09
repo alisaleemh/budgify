@@ -4,12 +4,12 @@ import pandas as pd
 from transaction_tracker.loaders.base import BaseLoader
 from transaction_tracker.core.models import Transaction
 
-# Regex to remove all characters except digits, minus sign, and decimal point.
-_CLEAN_AMOUNT = re.compile(r"[^\d\-\.]")
+_PAYMENT_RX    = re.compile(r"payment received", re.I)
+_CLEAN_AMOUNT  = re.compile(r"[^\d\-\.]")
 
 class AmexLoader(BaseLoader):
-    def load(self, file_path):
-        # 1. Read without header to detect the real header row
+    def load(self, file_path, include_payments=False):
+        # 1. Detect header row
         raw = pd.read_excel(file_path, header=None, engine='xlrd')
         header_row = None
         for idx, row in raw.iterrows():
@@ -20,7 +20,7 @@ class AmexLoader(BaseLoader):
         if header_row is None:
             raise RuntimeError(f"Could not locate header row in {file_path}")
 
-        # 2. Read again using that row as header
+        # 2. Read with that header
         df = pd.read_excel(
             file_path,
             header=header_row,
@@ -28,7 +28,7 @@ class AmexLoader(BaseLoader):
             parse_dates=False
         )
 
-        # 3. Normalize column names for lookup
+        # 3. Column lookup
         cols = {c.lower(): c for c in df.columns}
         def find(frag):
             frag = frag.lower()
@@ -41,28 +41,30 @@ class AmexLoader(BaseLoader):
         amt_col      = find('amount')
         merchant_col = find('merchant') or desc_col
 
-        # 4. Ensure required columns exist
         for name, col in (('date', date_col), ('description', desc_col), ('amount', amt_col)):
             if col is None:
                 raise RuntimeError(f"Missing required column '{name}' in {file_path}")
 
-        # 5. Yield Transaction objects
+        # 4. Parse & yield, with payment filtering/validation
         for _, row in df.iterrows():
-            # Coerce date to datetime.date
-            raw_d = row[date_col]
-            d = pd.to_datetime(raw_d).date()
+            d_raw = row[date_col]
+            d = pd.to_datetime(d_raw).date()
 
-            # Clean and parse amount (strip $, commas, etc.)
-            raw_amt = str(row[amt_col])
-            cleaned = _CLEAN_AMOUNT.sub("", raw_amt)
+            amt_raw = str(row[amt_col])
+            cleaned = _CLEAN_AMOUNT.sub("", amt_raw)
             try:
                 amount = float(cleaned)
             except ValueError:
-                raise ValueError(f"Could not parse amount '{raw_amt}' in {file_path}")
+                raise ValueError(f"Could not parse amount '{amt_raw}' in {file_path}")
 
-            yield Transaction(
-                date=d,
-                description=str(row[desc_col]).strip(),
-                merchant=str(row[merchant_col]).strip(),
-                amount=amount
-            )
+            desc = str(row[desc_col]).strip()
+            merch= str(row[merchant_col]).strip()
+            tx = Transaction(date=d, description=desc, merchant=merch, amount=amount)
+
+            is_payment = bool(_PAYMENT_RX.search(desc))
+            if not include_payments and is_payment:
+                continue
+            if include_payments and is_payment and tx.amount >= 0:
+                raise RuntimeError(f"Amex payment not negative: {tx}")
+
+            yield tx

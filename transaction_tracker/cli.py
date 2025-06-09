@@ -15,31 +15,33 @@ from transaction_tracker.utils import filter_transactions_by_month, dedupe_trans
               help='Output format (csv)')
 @click.option('--month', required=True,
               help='Ledger month to use (YYYY-MM), e.g. 2025-05')
+@click.option('--include-payments', is_flag=True, default=False,
+              help='Include payment transactions (default: exclude them)')
 @click.option('--config', 'config_path', default='config.yaml',
               type=click.Path(exists=True),
               help='Path to config.yaml')
-def main(bank, file_paths, output_format, month, config_path):
+def main(bank, file_paths, output_format, month, include_payments, config_path):
     """
     Load transactions from one or more files, filter to the specified month,
     dedupe, then append to the chosen output.
     """
-    # 1. Load config & instantiate plugins
-    cfg = load_config(config_path)
-    loader = get_loader(bank, cfg)
+    cfg       = load_config(config_path)
+    loader    = get_loader(bank, cfg)
     outputter = get_output(output_format, cfg)
 
-    # 2. Aggregate from multiple files
     all_txs = []
     for path in file_paths:
-        all_txs.extend(loader.load(path))
+        # pass include_payments flag into each loader
+        all_txs.extend(loader.load(path, include_payments=include_payments))
 
-    # 3. Filter and dedupe
-    filtered = filter_transactions_by_month(all_txs, month)
+    filtered   = filter_transactions_by_month(all_txs, month)
     unique_txs = dedupe_transactions(filtered)
 
-    # 4. Append to output
     outputter.append(unique_txs, month=month)
-    click.echo(f"Appended {len(unique_txs)} unique transactions for {month}.")
+    click.echo(
+        f"Appended {len(unique_txs)} transaction(s) for {month} "
+        f"({'including' if include_payments else 'excluding'} payments)."
+    )
 
 if __name__ == '__main__':
     main()

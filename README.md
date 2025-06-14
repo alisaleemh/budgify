@@ -85,7 +85,7 @@ budgify --dir ~/Downloads/statements \
          --month 2025-05
 
 # Include payments (must be negative amounts)
-transcli --dir ~/Downloads/statements \
+budgify --dir ~/Downloads/statements \
          --month 2025-05 \
          --include-payments
 ```

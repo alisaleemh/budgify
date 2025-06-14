@@ -2,12 +2,12 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="transaction-cli",
+    name="budgify",
     version="0.1.0",
     description="A modular CLI for importing and categorizing bank transactions",
     author="Your Name",
     author_email="you@example.com",
-    url="https://github.com/yourusername/transaction-cli",
+    url="https://github.com/yourusername/budgify",
     packages=find_packages(),
     python_requires=">=3.7",
     install_requires=[
@@ -19,7 +19,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "transcli=transaction_tracker.cli:main",
+            "budgify=transaction_tracker.cli:main",
         ],
     },
     classifiers=[

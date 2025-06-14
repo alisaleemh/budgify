@@ -57,6 +57,3 @@ def main(statements_dir, month, output_format, include_payments, config_path):
         f"Appended {len(unique_txs)} transaction(s) for {month} "
         f"({'including' if include_payments else 'excluding'} payments)."
     )
-
-if __name__ == '__main__':
-    main()

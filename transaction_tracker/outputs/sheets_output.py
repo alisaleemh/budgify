@@ -4,16 +4,18 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from datetime import datetime
+from dateutil import parser as date_parser
 from transaction_tracker.outputs.base import BaseOutput
 from transaction_tracker.core.categorizer import categorize
 
 
 class SheetsOutput(BaseOutput):
     """
-    Writes transactions into a Google Sheet named "Budget YYYY-MM",
-    with raw data on a sheet titled "YYYY-MM" and an embedded
-    pivot table on the same sheet (starting in column G) that sums
-    amounts by category.
+    Writes transactions into a single yearly Google Sheet named "Budget YYYY",
+    with each month as its own tab (e.g., "May 2025").
+    On each tab, raw data (columns A–E) is written, sorted by empty categories first,
+    and a live pivot table is injected on the same sheet (starting in column G)
+    that sums amounts by category.
     """
     def __init__(self, config):
         self.config      = config
@@ -31,12 +33,14 @@ class SheetsOutput(BaseOutput):
         self.owner_email = google_cfg.get('owner_email')
 
     def append(self, transactions, month=None):
-        # Determine spreadsheet & sheet names
-        month     = month or datetime.now().strftime('%Y-%m')
-        ss_title  = f"Budget {month}"
-        raw_title = month
+        # Determine year and human-readable month name
+        month_str = month or datetime.now().strftime('%Y-%m')
+        dt        = datetime.strptime(month_str, '%Y-%m')
+        year      = dt.strftime('%Y')
+        tab_title = dt.strftime('%B %Y')  # e.g., "May 2025"
+        ss_title  = f"Budget {year}"
 
-        # 1) Open or create the spreadsheet
+        # 1) Open or create the yearly spreadsheet
         try:
             sh = self.gc.open(ss_title)
             created_ss = False
@@ -61,21 +65,21 @@ class SheetsOutput(BaseOutput):
                     fields        = 'id, parents'
                 ).execute()
 
-        # 3) Share with personal account (for visibility)
+        # 3) Share with personal account for visibility
         if self.owner_email:
             sh.share(self.owner_email, perm_type='user', role='writer')
 
-        # 4) Find or create raw-data sheet
+        # 4) Find or create the month tab
         try:
-            ws_raw = sh.worksheet(raw_title)
+            ws_raw = sh.worksheet(tab_title)
         except gspread.exceptions.WorksheetNotFound:
             if created_ss and sh.sheet1.title == 'Sheet1':
                 ws_raw = sh.sheet1
-                ws_raw.update_title(raw_title)
+                ws_raw.update_title(tab_title)
             else:
-                ws_raw = sh.add_worksheet(title=raw_title, rows="1000", cols="7")
+                ws_raw = sh.add_worksheet(title=tab_title, rows="1000", cols="7")
 
-        # 5) Write raw data (USER_ENTERED for numeric parsing)
+        # 5) Build raw rows for columns A–E
         rows = [['date','description','merchant','category','amount']]
         for tx in transactions:
             date_s   = tx.date.isoformat() if hasattr(tx.date, 'isoformat') else str(tx.date)
@@ -83,40 +87,35 @@ class SheetsOutput(BaseOutput):
             amt_s    = f"{tx.amount:.2f}" if isinstance(tx.amount, float) else str(tx.amount)
             rows.append([date_s, tx.description, tx.merchant, cat, amt_s])
 
+        # Clear and write with USER_ENTERED so amounts are numeric
         ws_raw.clear()
         ws_raw.update('A1', rows, value_input_option='USER_ENTERED')
 
-        # 6) Fetch sheetId and ensure enough columns for pivot
-        meta = self.sheets_srv.spreadsheets().get(
+        # 6) Sort the range A2:E by Category (column D, index 3) -- blanks first
+        # Fetch sheetId for the tab
+        meta      = self.sheets_srv.spreadsheets().get(
             spreadsheetId=sh.id,
             fields='sheets.properties'
         ).execute()
-        props = {
-            s['properties']['title']: s['properties']['sheetId']
-            for s in meta['sheets']
-        }
-        raw_id = props[raw_title]
-        sheet_props = next(
-            s['properties'] for s in meta['sheets']
-            if s['properties']['sheetId'] == raw_id
-        )
-        current_cols = sheet_props.get('gridProperties', {}).get('columnCount', 0)
-        if current_cols < 7:
-            resize_req = {
-                'updateSheetProperties': {
-                    'properties': {
-                        'sheetId': raw_id,
-                        'gridProperties': {'columnCount': 7}
-                    },
-                    'fields': 'gridProperties.columnCount'
-                }
+        props     = {s['properties']['title']: s['properties']['sheetId'] for s in meta['sheets']}
+        raw_id    = props[tab_title]
+        sort_req  = {
+            'sortRange': {
+                'range': {
+                    'sheetId': raw_id,
+                    'startRowIndex': 1,
+                    'endRowIndex': len(rows),
+                    'startColumnIndex': 0,
+                    'endColumnIndex': 5
+                },
+                'sortSpecs': [{
+                    'dimensionIndex': 3,
+                    'sortOrder': 'ASCENDING'
+                }]
             }
-            self.sheets_srv.spreadsheets().batchUpdate(
-                spreadsheetId=sh.id,
-                body={'requests': [resize_req]}
-            ).execute()
+        }
 
-        # 7) Inject dynamic pivot table in same sheet (col G)
+        # 7) Inject pivot table in column G on same tab
         pivot_req = {
             'updateCells': {
                 'rows': [{
@@ -145,9 +144,14 @@ class SheetsOutput(BaseOutput):
                 'fields': 'pivotTable'
             }
         }
+
+        # Batch update: sort then pivot
         self.sheets_srv.spreadsheets().batchUpdate(
             spreadsheetId=sh.id,
-            body={'requests': [pivot_req]}
+            body={'requests': [sort_req, pivot_req]}
         ).execute()
 
-        print(f"Wrote {len(rows)-1} rows to '{raw_title}' and updated pivot at G1.")
+        print(
+            f"Wrote {len(rows)-1} rows to '{tab_title}' tab in '{ss_title}', "
+            f"sorted by category (blanks first) and updated pivot at G1."
+        )

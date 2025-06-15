@@ -7,4 +7,4 @@ def categorize(tx, categories_map):
         for kw in keywords:
             if kw.lower() in name or kw.lower() in desc:
                 return cat
-    return None
+    return "misc"

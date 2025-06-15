@@ -12,20 +12,23 @@ from transaction_tracker.utils import filter_transactions_by_month, dedupe_trans
 @click.option('--month', required=True,
               help='Ledger month to use (YYYY-MM), e.g. 2025-05')
 @click.option('--output-format', default='csv',
+              type=click.Choice(['csv']),
               help='Output format (csv)')
+@click.option('--to-sheets', is_flag=True, default=False,
+              help='Also push results to Google Sheets')
 @click.option('--include-payments', is_flag=True, default=False,
               help='Include payment transactions (default: exclude them)')
 @click.option('--config', 'config_path', default='config.yaml',
               type=click.Path(exists=True),
               help='Path to config.yaml')
-def main(statements_dir, month, output_format, include_payments, config_path):
+def main(statements_dir, month, output_format, to_sheets, include_payments, config_path):
     """
     Scan a directory of mixed-bank statements, auto-detect bank by filename,
-    parse & filter each file, then append all to the chosen output.
+    parse & filter each file, then append all to the chosen output(s).
     """
-    cfg        = load_config(config_path)
-    loaders    = cfg['bank_loaders']  # dict: bank_key -> loader path
-    outputter  = get_output(output_format, cfg)
+    cfg       = load_config(config_path)
+    loaders   = cfg['bank_loaders']
+    outputter = get_output(output_format, cfg)
 
     all_txs = []
     for fname in os.listdir(statements_dir):
@@ -33,9 +36,8 @@ def main(statements_dir, month, output_format, include_payments, config_path):
         if not os.path.isfile(path):
             continue
 
-        # determine bank by filename
         match = None
-        low   = fname.lower()
+        low = fname.lower()
         for bank in loaders:
             if bank.lower() in low:
                 match = bank
@@ -47,13 +49,18 @@ def main(statements_dir, month, output_format, include_payments, config_path):
         loader = get_loader(match, cfg)
         all_txs.extend(loader.load(path, include_payments=include_payments))
 
-    # filter by month & dedupe across all banks/files
     filtered   = filter_transactions_by_month(all_txs, month)
     unique_txs = dedupe_transactions(filtered)
 
-    # append into output sink
+    # write CSV
     outputter.append(unique_txs, month=month)
     click.echo(
         f"Appended {len(unique_txs)} transaction(s) for {month} "
-        f"({'including' if include_payments else 'excluding'} payments)."
+        f"({'including' if include_payments else 'excluding'} payments) to CSV."
     )
+
+    # optionally push to Google Sheets
+    if to_sheets:
+        sheets_out = get_output('sheets', cfg)
+        sheets_out.append(unique_txs, month=month)
+        click.echo(f"Pushed {len(unique_txs)} rows to Google Sheets for {month}.")

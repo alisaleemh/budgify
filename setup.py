@@ -16,6 +16,10 @@ setup(
         "pandas>=1.1",
         "openpyxl>=3.0",
         "xlrd>=2.0.1",
+        "gspread>=5.0.0",
+        "google-auth>=2.0.0",
+        "google-api-python-client>=2.0.0",
+
     ],
     entry_points={
         "console_scripts": [

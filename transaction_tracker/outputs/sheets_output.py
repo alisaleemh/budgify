@@ -4,125 +4,203 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from datetime import datetime
-from dateutil import parser as date_parser
+from calendar import month_name
 from transaction_tracker.outputs.base import BaseOutput
 from transaction_tracker.core.categorizer import categorize
 
 
 class SheetsOutput(BaseOutput):
     """
-    Writes transactions into a single yearly Google Sheet named "Budget YYYY",
-    with each month as its own tab (e.g., "May 2025").
-    On each tab, raw data (columns A–E) is written, sorted by empty categories first,
-    and a live pivot table is injected on the same sheet (starting in column G)
-    that sums amounts by category.
+    Yearly budget spreadsheet with:
+      - One tab per month ("May 2025" etc.) with its own pivot
+      - An "AllData" tab deduping month tabs, prepended with a "month" column
+      - A "Summary" tab containing a single pivot grouped by month & category
+      - Tabs reordered: Summary, AllData, then months Jan–Dec
     """
+    MONTH_FMT = "%B %Y"
+    ALL_DATA  = "AllData"
+    SUMMARY   = "Summary"
+
     def __init__(self, config):
-        self.config      = config
-        google_cfg       = config.get('google', {})
-        cred_path        = google_cfg.get('service_account_file')
-        scopes           = [
+        google_cfg  = config.get('google', {})
+        scopes      = [
             'https://www.googleapis.com/auth/spreadsheets',
             'https://www.googleapis.com/auth/drive'
         ]
-        creds            = Credentials.from_service_account_file(cred_path, scopes=scopes)
-        self.gc          = gspread.authorize(creds)
-        self.sheets_srv  = build('sheets', 'v4', credentials=creds)
-        self.drive_srv   = build('drive', 'v3', credentials=creds)
-        self.folder_id   = google_cfg.get('sheet_folder_id')
-        self.owner_email = google_cfg.get('owner_email')
+        creds       = Credentials.from_service_account_file(
+            google_cfg['service_account_file'], scopes=scopes
+        )
+        self.gc         = gspread.authorize(creds)
+        self.sheets_srv = build('sheets', 'v4', credentials=creds)
+        self.drive_srv  = build('drive', 'v3', credentials=creds)
+        self.folder_id  = google_cfg.get('sheet_folder_id')
+        self.owner      = google_cfg.get('owner_email')
+        self.config     = config
 
     def append(self, transactions, month=None):
-        # Determine year and human-readable month name
+        # Determine names
         month_str = month or datetime.now().strftime('%Y-%m')
         dt        = datetime.strptime(month_str, '%Y-%m')
         year      = dt.strftime('%Y')
-        tab_title = dt.strftime('%B %Y')  # e.g., "May 2025"
+        tab_title = dt.strftime(self.MONTH_FMT)
         ss_title  = f"Budget {year}"
 
-        # 1) Open or create the yearly spreadsheet
+        # Open or create spreadsheet
         try:
             sh = self.gc.open(ss_title)
-            created_ss = False
+            created = False
         except gspread.exceptions.SpreadsheetNotFound:
             sh = self.gc.create(ss_title)
-            created_ss = True
+            created = True
 
-        # 2) Move into Drive folder (and out of SA root)
+        # Move/share
         if self.folder_id:
-            meta    = self.drive_srv.files().get(
-                fileId=sh.id,
-                fields='parents'
-            ).execute()
+            meta    = self.drive_srv.files().get(fileId=sh.id, fields='parents').execute()
             parents = set(meta.get('parents', []))
-            to_add    = [] if self.folder_id in parents else [self.folder_id]
-            to_remove = ['root'] if 'root' in parents else []
-            if to_add or to_remove:
+            add     = [] if self.folder_id in parents else [self.folder_id]
+            rem     = ['root'] if 'root' in parents else []
+            if add or rem:
                 self.drive_srv.files().update(
                     fileId        = sh.id,
-                    addParents    = ",".join(to_add),
-                    removeParents = ",".join(to_remove),
-                    fields        = 'id, parents'
+                    addParents    = ','.join(add),
+                    removeParents = ','.join(rem),
+                    fields        = 'id,parents'
                 ).execute()
+        if self.owner:
+            sh.share(self.owner, perm_type='user', role='writer')
 
-        # 3) Share with personal account for visibility
-        if self.owner_email:
-            sh.share(self.owner_email, perm_type='user', role='writer')
-
-        # 4) Find or create the month tab
-        try:
-            ws_raw = sh.worksheet(tab_title)
-        except gspread.exceptions.WorksheetNotFound:
-            if created_ss and sh.sheet1.title == 'Sheet1':
-                ws_raw = sh.sheet1
-                ws_raw.update_title(tab_title)
-            else:
-                ws_raw = sh.add_worksheet(title=tab_title, rows="1000", cols="7")
-
-        # 5) Build raw rows for columns A–E
-        rows = [['date','description','merchant','category','amount']]
+        # 1) Month tab: raw + pivot
+        raw_ws = self._get_tab(sh, tab_title, created)
+        rows   = [['date','description','merchant','category','amount']]
         for tx in transactions:
-            date_s   = tx.date.isoformat() if hasattr(tx.date, 'isoformat') else str(tx.date)
-            cat      = categorize(tx, self.config['categories']) or ''
-            amt_s    = f"{tx.amount:.2f}" if isinstance(tx.amount, float) else str(tx.amount)
-            rows.append([date_s, tx.description, tx.merchant, cat, amt_s])
+            rows.append([
+                tx.date.isoformat() if hasattr(tx.date,'isoformat') else str(tx.date),
+                tx.description,
+                tx.merchant,
+                categorize(tx, self.config['categories']) or '',
+                f"{tx.amount:.2f}" if isinstance(tx.amount, float) else str(tx.amount)
+            ])
+        raw_ws.clear()
+        raw_ws.update('A1', rows, value_input_option='USER_ENTERED')
+        self._ensure_pivot(raw_ws, rows, raw_ws.title)
 
-        # Clear and write with USER_ENTERED so amounts are numeric
-        ws_raw.clear()
-        ws_raw.update('A1', rows, value_input_option='USER_ENTERED')
+        # 2) AllData tab: combine & dedupe
+        all_rows = [['month','date','description','merchant','category','amount']]
+        seen = set()
+        for ws in sh.worksheets():
+            title = ws.title
+            if title in (self.ALL_DATA, self.SUMMARY):
+                continue
+            data = ws.get_all_values()[1:]
+            for r in data:
+                key = (title,)+tuple(r)
+                if key not in seen:
+                    seen.add(key)
+                    all_rows.append([title]+r)
+        all_ws = self._get_tab(sh, self.ALL_DATA, created, cols='6')
+        all_ws.clear()
+        all_ws.update('A1', all_rows, value_input_option='USER_ENTERED')
 
-        # 6) Sort the range A2:E by Category (column D, index 3) -- blanks first
-        # Fetch sheetId for the tab
-        meta      = self.sheets_srv.spreadsheets().get(
+        # 3) Summary tab: single pivot grouping month & category
+        sum_ws = self._get_tab(sh, self.SUMMARY, created, cols='10')
+        sum_ws.clear()
+        meta = self.sheets_srv.spreadsheets().get(
             spreadsheetId=sh.id,
             fields='sheets.properties'
-        ).execute()
-        props     = {s['properties']['title']: s['properties']['sheetId'] for s in meta['sheets']}
-        raw_id    = props[tab_title]
-        sort_req  = {
-            'sortRange': {
-                'range': {
-                    'sheetId': raw_id,
-                    'startRowIndex': 1,
-                    'endRowIndex': len(rows),
-                    'startColumnIndex': 0,
-                    'endColumnIndex': 5
-                },
-                'sortSpecs': [{
-                    'dimensionIndex': 3,
-                    'sortOrder': 'ASCENDING'
-                }]
-            }
-        }
+        ).execute()['sheets']
+        id_map = {s['properties']['title']: s['properties']['sheetId'] for s in meta}
 
-        # 7) Inject pivot table in column G on same tab
         pivot_req = {
             'updateCells': {
                 'rows': [{
                     'values': [{
                         'pivotTable': {
                             'source': {
-                                'sheetId': raw_id,
+                                'sheetId': id_map[self.ALL_DATA],
+                                'startRowIndex': 0,
+                                'endRowIndex': len(all_rows),
+                                'startColumnIndex': 0,
+                                'endColumnIndex': 6
+                            },
+                            'rows': [
+                                {'sourceColumnOffset': 0, 'showTotals': True, 'sortOrder': 'ASCENDING'},
+                                {'sourceColumnOffset': 4, 'showTotals': True, 'sortOrder': 'ASCENDING'}
+                            ],
+                            'values': [{
+                                'summarizeFunction': 'SUM',
+                                'sourceColumnOffset': 5
+                            }]
+                        }
+                    }]
+                }],
+                'start': {'sheetId': id_map[self.SUMMARY], 'rowIndex': 0, 'columnIndex': 0},
+                'fields': 'pivotTable'
+            }
+        }
+        self.sheets_srv.spreadsheets().batchUpdate(
+            spreadsheetId=sh.id,
+            body={'requests': [pivot_req]}
+        ).execute()
+
+        # 4) Reorder tabs: Summary, AllData, then months Jan–Dec
+        # Fetch metadata
+        meta = self.sheets_srv.spreadsheets().get(
+            spreadsheetId=sh.id,
+            fields='sheets.properties'
+        ).execute()['sheets']
+        id_map = {s['properties']['title']: s['properties']['sheetId'] for s in meta}
+        # Desired order
+        ordered = [self.SUMMARY, self.ALL_DATA]
+        for m in range(1, 13):
+            title = f"{month_name[m]} {year}"
+            if title in id_map:
+                ordered.append(title)
+        # Build requests
+        reqs = []
+        for idx, title in enumerate(ordered):
+            sid = id_map.get(title)
+            reqs.append({
+                'updateSheetProperties': {
+                    'properties': {'sheetId': sid, 'index': idx},
+                    'fields': 'index'
+                }
+            })
+        # Execute reorder
+        if reqs:
+            self.sheets_srv.spreadsheets().batchUpdate(
+                spreadsheetId=sh.id,
+                body={'requests': reqs}
+            ).execute()
+
+        print(f"Updated '{tab_title}' tab, AllData, Summary pivot, and reordered tabs in '{ss_title}'.")
+
+    def _get_tab(self, sh, title, created_ss, rows='100', cols='10'):
+        try:
+            return sh.worksheet(title)
+        except gspread.exceptions.WorksheetNotFound:
+            if created_ss and sh.sheet1.title == 'Sheet1':
+                ws = sh.sheet1
+                ws.update_title(title)
+                return ws
+            return sh.add_worksheet(title=title, rows=rows, cols=cols)
+
+    def _ensure_pivot(self, ws, rows, title):
+        ss       = ws.spreadsheet.id
+        meta     = self.sheets_srv.spreadsheets().get(
+            spreadsheetId=ss,
+            fields='sheets.properties'
+        ).execute()['sheets']
+        sheet_id = next(
+            s['properties']['sheetId']
+            for s in meta if s['properties']['title']==title
+        )
+        pivot_req = {
+            'updateCells': {
+                'rows': [{
+                    'values': [{
+                        'pivotTable': {
+                            'source': {
+                                'sheetId': sheet_id,
                                 'startRowIndex': 0,
                                 'endRowIndex': len(rows),
                                 'startColumnIndex': 0,
@@ -140,18 +218,11 @@ class SheetsOutput(BaseOutput):
                         }
                     }]
                 }],
-                'start': {'sheetId': raw_id, 'rowIndex': 0, 'columnIndex': 6},
+                'start': {'sheetId': sheet_id, 'rowIndex': 0, 'columnIndex': 6},
                 'fields': 'pivotTable'
             }
         }
-
-        # Batch update: sort then pivot
         self.sheets_srv.spreadsheets().batchUpdate(
-            spreadsheetId=sh.id,
-            body={'requests': [sort_req, pivot_req]}
+            spreadsheetId=ss,
+            body={'requests':[pivot_req]}
         ).execute()
-
-        print(
-            f"Wrote {len(rows)-1} rows to '{tab_title}' tab in '{ss_title}', "
-            f"sorted by category (blanks first) and updated pivot at G1."
-        )

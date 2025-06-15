@@ -37,13 +37,14 @@ class SheetsOutput(BaseOutput):
         self.owner      = google_cfg.get('owner_email')
         self.config     = config
 
-    def append(self, transactions, month=None):
-        # Determine names
-        month_str = month or datetime.now().strftime('%Y-%m')
-        dt        = datetime.strptime(month_str, '%Y-%m')
-        year      = dt.strftime('%Y')
-        tab_title = dt.strftime(self.MONTH_FMT)
-        ss_title  = f"Budget {year}"
+    def append(self, transactions):
+        # Determine year
+        months = sorted({tx.date.strftime('%Y-%m') for tx in transactions})
+        if not months:
+            return
+        first_dt = datetime.strptime(months[0], '%Y-%m')
+        year = first_dt.year
+        ss_title = f"Budget {year}"
 
         # Open or create spreadsheet
         try:
@@ -69,20 +70,25 @@ class SheetsOutput(BaseOutput):
         if self.owner:
             sh.share(self.owner, perm_type='user', role='writer')
 
-        # 1) Month tab: raw + pivot
-        raw_ws = self._get_tab(sh, tab_title, created)
-        rows   = [['date','description','merchant','category','amount']]
-        for tx in transactions:
-            rows.append([
-                tx.date.isoformat() if hasattr(tx.date,'isoformat') else str(tx.date),
-                tx.description,
-                tx.merchant,
-                categorize(tx, self.config['categories']) or '',
-                f"{tx.amount:.2f}" if isinstance(tx.amount, float) else str(tx.amount)
-            ])
-        raw_ws.clear()
-        raw_ws.update('A1', rows, value_input_option='USER_ENTERED')
-        self._ensure_pivot(raw_ws, rows, raw_ws.title)
+        # 1) Monthly tabs
+        for month_str in months:
+            dt = datetime.strptime(month_str, '%Y-%m')
+            tab_title = dt.strftime(self.MONTH_FMT)
+            # filter transactions for this month
+            txs = [tx for tx in transactions if tx.date.strftime('%Y-%m') == month_str]
+            ws = self._get_tab(sh, tab_title, created)
+            rows = [['date','description','merchant','category','amount']]
+            for tx in txs:
+                rows.append([
+                    tx.date.isoformat(),
+                    tx.description,
+                    tx.merchant,
+                    categorize(tx, self.config['categories']) or '',
+                    f"{tx.amount:.2f}"
+                ])
+            ws.clear()
+            ws.update('A1', rows, value_input_option='USER_ENTERED')
+            self._ensure_pivot(ws, rows, ws.title)
 
         # 2) AllData tab: combine & dedupe
         all_rows = [['month','date','description','merchant','category','amount']]
@@ -93,10 +99,10 @@ class SheetsOutput(BaseOutput):
                 continue
             data = ws.get_all_values()[1:]
             for r in data:
-                key = (title,)+tuple(r)
+                key = (title,) + tuple(r)
                 if key not in seen:
                     seen.add(key)
-                    all_rows.append([title]+r)
+                    all_rows.append([title] + r)
         all_ws = self._get_tab(sh, self.ALL_DATA, created, cols='6')
         all_ws.clear()
         all_ws.update('A1', all_rows, value_input_option='USER_ENTERED')
@@ -109,7 +115,6 @@ class SheetsOutput(BaseOutput):
             fields='sheets.properties'
         ).execute()['sheets']
         id_map = {s['properties']['title']: s['properties']['sheetId'] for s in meta}
-
         pivot_req = {
             'updateCells': {
                 'rows': [{
@@ -142,37 +147,33 @@ class SheetsOutput(BaseOutput):
             body={'requests': [pivot_req]}
         ).execute()
 
-        # 4) Reorder tabs: Summary, AllData, then months Jan–Dec
-        # Fetch metadata
+        # 4) Reorder tabs
         meta = self.sheets_srv.spreadsheets().get(
             spreadsheetId=sh.id,
             fields='sheets.properties'
         ).execute()['sheets']
         id_map = {s['properties']['title']: s['properties']['sheetId'] for s in meta}
-        # Desired order
         ordered = [self.SUMMARY, self.ALL_DATA]
-        for m in range(1, 13):
-            title = f"{month_name[m]} {year}"
-            if title in id_map:
-                ordered.append(title)
-        # Build requests
+        for m in range(1,13):
+            t = f"{month_name[m]} {year}"
+            if t in id_map:
+                ordered.append(t)
         reqs = []
         for idx, title in enumerate(ordered):
-            sid = id_map.get(title)
+            sid = id_map[title]
             reqs.append({
                 'updateSheetProperties': {
                     'properties': {'sheetId': sid, 'index': idx},
                     'fields': 'index'
                 }
             })
-        # Execute reorder
         if reqs:
             self.sheets_srv.spreadsheets().batchUpdate(
                 spreadsheetId=sh.id,
                 body={'requests': reqs}
             ).execute()
 
-        print(f"Updated '{tab_title}' tab, AllData, Summary pivot, and reordered tabs in '{ss_title}'.")
+        print(f"Built tabs for {len(months)} months, AllData, Summary, and reordered tabs in '{ss_title}'.")
 
     def _get_tab(self, sh, title, created_ss, rows='100', cols='10'):
         try:

@@ -9,52 +9,29 @@ from transaction_tracker.core.categorizer import categorize
 
 
 class CSVOutput(BaseOutput):
+    """
+    Writes all transactions to a single master CSV file named Budget<Year>.csv,
+    de-duplicated and sorted by date (oldest to latest).
+    """
     def __init__(self, config):
-        self.config = config
-        self.output_dir = config.get('output_dir', 'data')
+        self.config      = config
+        self.output_dir  = config.get('output_dir', 'data')
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def append(self, transactions, month=None):
-        month = month or datetime.now().strftime('%Y-%m')
-        out_path = os.path.join(self.output_dir, f"{month}.csv")
+    def append(self, transactions):
+        if not transactions:
+            print("No transactions to write.")
+            return
 
-        # 1) Load existing records
+        # Deduplicate and map
         records = {}
-        if os.path.isfile(out_path):
-            with open(out_path, 'r', newline='') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    date_s   = row['date'].strip()
-                    desc     = row['description'].strip()
-                    merchant = row['merchant'].strip()
-                    amount   = f"{Decimal(row['amount'].strip()):.2f}"
-                    key = (date_s, desc, merchant, amount)
-                    records[key] = {
-                        'date':        date_s,
-                        'description': desc,
-                        'merchant':    merchant,
-                        'category':    row.get('category', '').strip(),
-                        'amount':      amount
-                    }
-        original_count = len(records)
-
-        # 2) Merge new transactions
         for tx in transactions:
-            # normalize date to ISO string
-            if hasattr(tx.date, 'isoformat'):
-                date_s = tx.date.isoformat()
-            else:
-                date_s = str(tx.date)
-            # then strip any stray whitespace
-            date_s = date_s.strip()
-
-            # ensure description and merchant are strings
+            date_s   = tx.date.isoformat() if hasattr(tx.date, 'isoformat') else str(tx.date)
             desc     = str(tx.description).strip()
             merchant = str(tx.merchant).strip()
             amount   = f"{Decimal(tx.amount):.2f}"
-
-            key = (date_s, desc, merchant, amount)
-            cat = categorize(tx, self.config['categories']) or ''
+            key      = (date_s, desc, merchant, amount)
+            cat      = categorize(tx, self.config['categories']) or ''
             records[key] = {
                 'date':        date_s,
                 'description': desc,
@@ -63,11 +40,22 @@ class CSVOutput(BaseOutput):
                 'amount':      amount
             }
 
-        # 3) Write back the full de-duped list
+        # Sort records by date ascending and extract year
+        sorted_records = sorted(
+            records.values(),
+            key=lambda r: datetime.fromisoformat(r['date'])
+        )
+        year = datetime.fromisoformat(sorted_records[0]['date']).year
+
+        # Determine master filename
+        filename = f"Budget{year}.csv"
+        out_path = os.path.join(self.output_dir, filename)
+
+        # Write back to master CSV
         with open(out_path, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(['date','description','merchant','category','amount'])
-            for row in records.values():
+            for row in sorted_records:
                 writer.writerow([
                     row['date'],
                     row['description'],
@@ -76,6 +64,5 @@ class CSVOutput(BaseOutput):
                     row['amount'],
                 ])
 
-        new_count = len(records) - original_count
-        print(f"Written {len(records)} unique transactions to {out_path}")
-        print(f"Appended {new_count} new transaction(s) for {month}")
+        new_count = len(sorted_records)
+        print(f"Written {new_count} unique transactions to {out_path}")

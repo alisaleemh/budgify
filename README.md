@@ -164,6 +164,17 @@ This will create (or update) a **"Budget 2025"** workbook in your Drive folder, 
 3. Update documentation.
 4. Submit a pull request.
 
+## Testing
+
+Budgify's tests require `pytest` and `PyYAML`. Install dependencies from `requirements.txt` and run:
+
+```bash
+pip install -r requirements.txt
+pytest -q
+```
+
+Google Sheets APIs are mocked, so the test suite runs offline.
+
 ## License
 
 Released under the [MIT License](LICENSE).

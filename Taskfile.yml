@@ -21,5 +21,4 @@ tasks:
     desc: Install dependencies and run the test suite
     cmds:
       - pip install -r requirements.txt
-      - pytest -q
-
+      - pytest -vv

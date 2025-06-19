@@ -1,0 +1,27 @@
+# Example configuration for Budgify
+bank_loaders:
+  amex: "transaction_tracker.loaders.amex.AmexLoader"
+  canadiantire: "transaction_tracker.loaders.canadiantire.CanadianTireLoader"
+  tdvisa: "transaction_tracker.loaders.tdvisa.TDVisaLoader"
+  hometrust: "transaction_tracker.loaders.hometrust.HomeTrustLoader"
+
+output_modules:
+  csv: "transaction_tracker.outputs.csv_output.CSVOutput"
+  sheets: "transaction_tracker.outputs.sheets_output.SheetsOutput"
+
+# Path to optional manual transaction YAML
+manual_transactions_file: manual.yaml
+
+categories:
+  restaurants: []
+  groceries: []
+  fun: []
+  fuel: []
+  # etc.
+
+data_dir: "./data"
+
+google:
+  service_account_file: "/path/to/service-account.json"
+  sheet_folder_id: "GOOGLE_DRIVE_FOLDER_ID"
+  owner_email: "your.email@example.com"

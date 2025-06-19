@@ -53,7 +53,8 @@ class BaseOutput(ABC):
 
 ## Configuration
 
-`config.yaml` configures loaders, outputs, categories, and Google credentials:
+Create your own `config.yaml` (ignored by Git) based on `examples/config.example.yaml`.
+This file configures loaders, outputs, categories, and Google credentials:
 
 ```yaml
 bank_loaders:
@@ -85,16 +86,35 @@ google:
 
 ```
 
+`config.yaml` and your personal `manual.yaml` are listed in `.gitignore` so they remain local. Copy the templates from `examples/` and modify them as needed.
+
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/transaction-cli.git
-cd transaction-cli
+git clone https://github.com/yourusername/budgify.git
+cd budgify
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
+# Or use the task runner:
+task install
 # Optional: if you use SheetsOutput, also:
 pip install gspread google-auth google-api-python-client
+```
+
+### Packaging
+
+Build a wheel for distribution using the `task` runner:
+
+```bash
+task build
+```
+
+Install the cross-platform [`task`](https://taskfile.dev) binary if you don't already have it.
+The wheel will be placed in `dist/`. Copy it to another machine and install via:
+
+```bash
+pip install dist/budgify-<version>-py3-none-any.whl
 ```
 
 ## Usage
@@ -114,7 +134,8 @@ Results:  `data/Budget2025.csv` (for year 2025), deduped and sorted by date.
 
 Any cash purchases or other expenses not present in bank statements can be
 listed in a small YAML file. Set `manual_transactions_file` in `config.yaml` or
-provide `--manual-file` on the command line.
+provide `--manual-file` on the command line. See
+`examples/manual.example.yaml` for a template.
 
 Example `manual.yaml`:
 
@@ -171,6 +192,12 @@ Budgify's tests require `pytest` and `PyYAML`. Install dependencies from `requir
 ```bash
 pip install -r requirements.txt
 pytest -q
+```
+
+Alternatively use the task runner which installs dependencies first:
+
+```bash
+task test
 ```
 
 Google Sheets APIs are mocked, so the test suite runs offline.

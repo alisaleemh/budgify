@@ -1,5 +1,5 @@
 # transaction_tracker/manual.py
-from datetime import datetime
+from datetime import datetime, date
 import yaml
 from transaction_tracker.core.models import Transaction
 
@@ -11,11 +11,17 @@ def load_manual_transactions(path):
 
     txs = []
     for entry in data:
-        date_str = entry.get('date')
-        if not date_str:
+        date_val = entry.get('date')
+        if not date_val:
             raise ValueError(f"Missing 'date' in manual entry: {entry}")
+        if isinstance(date_val, date):
+            d = date_val
+        elif isinstance(date_val, str):
+            d = datetime.fromisoformat(date_val).date()
+        else:
+            raise ValueError(f"Unrecognized date format in manual entry: {entry}")
         tx = Transaction(
-            date=datetime.fromisoformat(date_str).date(),
+            date=d,
             description=entry.get('description', ''),
             merchant=entry.get('merchant', ''),
             amount=float(entry.get('amount', 0.0)),

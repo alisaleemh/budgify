@@ -1,0 +1,9 @@
+# Example manual transactions
+- date: 2025-05-05
+  description: Farmers Market
+  merchant: CASH
+  amount: 23.50
+- date: 2025-05-10
+  description: Babysitter
+  merchant: CASH
+  amount: 60

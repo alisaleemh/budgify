@@ -5,6 +5,7 @@ from transaction_tracker.config import load_config
 from transaction_tracker.loaders import get_loader
 from transaction_tracker.outputs import get_output
 from transaction_tracker.utils import dedupe_transactions
+from transaction_tracker.manual import load_manual_transactions
 
 @click.command()
 @click.option(
@@ -31,7 +32,13 @@ from transaction_tracker.utils import dedupe_transactions
     type=click.Path(exists=True),
     help='Path to config.yaml'
 )
-def main(statements_dir, output_format, include_payments, config_path):
+@click.option(
+    '--manual-file', 'manual_file',
+    default=None,
+    type=click.Path(exists=True),
+    help='YAML file of manual transactions (overrides config if provided)'
+)
+def main(statements_dir, output_format, include_payments, config_path, manual_file):
     """
     Scan a directory of mixed-bank statements, auto-detect bank by filename,
     parse each file, dedupe the full set, and output to CSV or a multi-tab
@@ -39,6 +46,7 @@ def main(statements_dir, output_format, include_payments, config_path):
     """
     cfg = load_config(config_path)
     loaders = cfg['bank_loaders']
+    manual_cfg_path = manual_file or cfg.get('manual_transactions_file')
 
     # Collect all transactions across all files
     all_txs = []
@@ -53,6 +61,13 @@ def main(statements_dir, output_format, include_payments, config_path):
             continue
         loader = get_loader(match, cfg)
         all_txs.extend(loader.load(path, include_payments=include_payments))
+
+    # Manual transactions
+    if manual_cfg_path:
+        try:
+            all_txs.extend(load_manual_transactions(manual_cfg_path))
+        except Exception as e:
+            click.echo(f"Error loading manual transactions: {e}", err=True)
 
     # Deduplicate globally
     unique_txs = dedupe_transactions(all_txs)

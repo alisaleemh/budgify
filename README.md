@@ -66,6 +66,9 @@ output_modules:
   csv:    "transaction_tracker.outputs.csv_output.CSVOutput"
   sheets: "transaction_tracker.outputs.sheets_output.SheetsOutput"
 
+# Optional YAML listing any cash or other manual transactions
+manual_transactions_file: manual.yaml
+
 categories:
   restaurants: [...]
   groceries:   [...]
@@ -101,9 +104,28 @@ pip install gspread google-auth google-api-python-client
 ```bash
 # Process all statements in a directory, exclude payments:
 budgify --dir ~/Downloads/statements --output csv
+# You can optionally specify a different YAML of manual transactions
+# budgify --dir ~/Downloads/statements --manual-file my_manual.yaml --output csv
 ```
 
 Results:  `data/Budget2025.csv` (for year 2025), deduped and sorted by date.
+
+### Manual Transactions
+
+Any cash purchases or other expenses not present in bank statements can be
+listed in a small YAML file. Set `manual_transactions_file` in `config.yaml` or
+provide `--manual-file` on the command line.
+
+Example `manual.yaml`:
+
+```yaml
+- date: 2025-05-05
+  description: Farmers Market
+  merchant: CASH
+  amount: 23.50
+```
+
+These entries are loaded alongside statement data and deduplicated.
 
 ### Google Sheets Export
 

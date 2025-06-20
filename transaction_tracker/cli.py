@@ -1,11 +1,13 @@
 # transaction_tracker/cli.py
 import os
 import click
+from dotenv import load_dotenv
 from transaction_tracker.config import load_config
 from transaction_tracker.loaders import get_loader
 from transaction_tracker.outputs import get_output
 from transaction_tracker.utils import dedupe_transactions
 from transaction_tracker.manual import load_manual_transactions
+from transaction_tracker.ai import generate_report
 
 @click.command()
 @click.option(
@@ -38,12 +40,29 @@ from transaction_tracker.manual import load_manual_transactions
     type=click.Path(exists=True),
     help='YAML file of manual transactions (overrides config if provided)'
 )
-def main(statements_dir, output_format, include_payments, config_path, manual_file):
+@click.option(
+    '--env-file', 'env_file',
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help='Optional .env file containing API tokens for AI providers'
+)
+@click.option(
+    '--ai-report',
+    is_flag=True,
+    default=False,
+    help='Send transactions to an LLM and display the generated report.'
+)
+def main(statements_dir, output_format, include_payments, config_path, manual_file, env_file, ai_report):
     """
     Scan a directory of mixed-bank statements, auto-detect bank by filename,
     parse each file, dedupe the full set, and output to CSV or a multi-tab
     Google Sheet with monthly tabs, AllData, and Summary.
+    Optionally send the final transactions to an LLM to generate
+    an insight report printed to the console.
     """
+    if env_file:
+        load_dotenv(env_file)
+
     cfg = load_config(config_path)
     loaders = cfg['bank_loaders']
     manual_cfg_path = manual_file or cfg.get('manual_transactions_file')
@@ -79,3 +98,7 @@ def main(statements_dir, output_format, include_payments, config_path, manual_fi
     click.echo(
         f"Appended {len(unique_txs)} transaction(s) to {output_format.upper()}."
     )
+
+    if ai_report:
+        report = generate_report(unique_txs)
+        click.echo("\nAI Report:\n" + report)

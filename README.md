@@ -164,6 +164,16 @@ This will create (or update) a **"Budget 2025"** workbook in your Drive folder, 
 - An `AllData` tab.
 - A `Summary` tab aggregating by month & category.
 
+### AI Report
+
+Pass `--ai-report` when running Budgify to send the final list of
+transactions to an LLM for analysis. By default the Hugging Face
+Inference API is used via the **Cerebras** provider. Set `HF_API_TOKEN`
+and optionally `BUDGIFY_LLM_MODEL` to choose the model. To use OpenAI
+instead set `BUDGIFY_LLM_PROVIDER=openai` and provide `OPENAI_API_KEY`.
+You can keep these variables in a `.env` file and load it with
+`--env-file path/to/.env`.
+
 ## Extending
 
 ### Add a new bank loader

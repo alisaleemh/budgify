@@ -19,6 +19,8 @@ setup(
         "gspread>=5.0.0",
         "google-auth>=2.0.0",
         "google-api-python-client>=2.0.0",
+        "huggingface_hub>=0.33",
+        "python-dotenv>=1.0",
 
     ],
     entry_points={

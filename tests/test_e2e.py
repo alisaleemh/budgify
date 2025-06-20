@@ -37,6 +37,16 @@ sys.modules.setdefault("gspread", fake_gspread)
 sys.modules.setdefault("google.oauth2.service_account", fake_service_account)
 sys.modules.setdefault("googleapiclient.discovery", fake_discovery)
 
+import transaction_tracker.ai as ai
+
+
+class DummyProvider:
+    def generate(self, messages):
+        return "AI Report"
+
+
+ai.get_provider_from_env = lambda: DummyProvider()
+
 from transaction_tracker.cli import main as cli
 from transaction_tracker.outputs import sheets_output
 
@@ -233,3 +243,23 @@ def test_cli_sheets_output(tmp_path, monkeypatch):
     )
     assert res.exit_code == 0, res.output
     assert 'Appended 3 transaction' in res.output
+
+
+def test_cli_ai_report(tmp_path, monkeypatch):
+    stmts = tmp_path / 'stmts'
+    stmts.mkdir()
+    td_file = stmts / 'tdvisa.csv'
+    write_tdvisa_sample(td_file)
+    manual = tmp_path / 'manual.yaml'
+    write_manual(manual)
+    cfg_path = write_config(tmp_path, tmp_path / 'data')
+
+    env_file = tmp_path / '.env'
+    env_file.write_text('BUDGIFY_LLM_PROVIDER=huggingface\nHF_API_TOKEN=dummy\n')
+    runner = CliRunner()
+    res = runner.invoke(
+        cli,
+        ['--dir', str(stmts), '--output', 'csv', '--config', str(cfg_path), '--manual-file', str(manual), '--env-file', str(env_file), '--ai-report']
+    )
+    assert res.exit_code == 0, res.output
+    assert 'AI Report:' in res.output

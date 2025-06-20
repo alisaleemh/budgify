@@ -50,8 +50,6 @@ def _tx_to_line(tx: Transaction) -> str:
     return f"{tx.date.isoformat()} | {tx.description} | {tx.merchant} | {tx.amount:.2f}"
 
 
-
-
 def get_provider_from_env() -> LLMProvider:
     provider = os.environ.get("BUDGIFY_LLM_PROVIDER", "huggingface").lower()
     if provider == "openai":
@@ -60,7 +58,6 @@ def get_provider_from_env() -> LLMProvider:
             raise RuntimeError("OPENAI_API_KEY not set")
         model = os.environ.get("BUDGIFY_LLM_MODEL", "gpt-3.5-turbo")
         return OpenAIProvider(model=model, api_key=api_key)
-
     token = os.environ.get("HF_API_TOKEN")
     model = os.environ.get("BUDGIFY_LLM_MODEL", "Qwen/Qwen3-32B")
     return HuggingFaceProvider(model=model, token=token)
@@ -72,14 +69,13 @@ def generate_report(transactions: List[Transaction], provider: LLMProvider | Non
         return "No transactions to analyze."
 
     provider = provider or get_provider_from_env()
-
     lines = [_tx_to_line(tx) for tx in transactions]
     messages = [
-        {"role": "system", "content": "Provide a short financial summary and insights for the user based on these transactions."},
+        {"role": "system", "content": 
+            "Provide a short financial summary and insights for the user based on these transactions."},
         {"role": "user", "content": "\n".join(lines)},
     ]
-
     try:
         return provider.generate(messages)
-    except Exception as e:  # pragma: no cover - network errors
+    except Exception as e:
         return f"Error contacting LLM: {e}"

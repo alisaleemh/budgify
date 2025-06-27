@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 
 # -----------------------------------------------------------------------------
 # Configure basic debug logging (caller can override)
+
 # -----------------------------------------------------------------------------
 logging.basicConfig(level=os.getenv("LLM_DEBUG", "INFO").upper())
 logger = logging.getLogger(__name__)

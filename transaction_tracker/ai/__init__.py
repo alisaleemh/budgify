@@ -9,6 +9,8 @@ from transaction_tracker.core.models import Transaction
 from huggingface_hub import InferenceClient
 from abc import ABC, abstractmethod
 
+_OLLAMA_URL = "http://localhost:11434/api/chat"
+
 
 _OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
@@ -94,6 +96,19 @@ class InsightsReport(BaseAIOutput):
             },
             {"role": "user", "content": "\n".join(lines)},
         ]
+@dataclass
+class OllamaProvider:
+    model: str
+    url: str = _OLLAMA_URL
+
+    def generate(self, messages: List[dict]) -> str:
+        payload = {"model": self.model, "messages": messages, "stream": False}
+        data = json.dumps(payload).encode()
+        req = urllib.request.Request(self.url, data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req) as resp:
+            resp_data = json.load(resp)
+        return resp_data.get("message", {}).get("content", "").strip()
 
 
 def _tx_to_line(tx: Transaction) -> str:
@@ -108,6 +123,10 @@ def get_provider_from_env() -> LLMProvider:
             raise RuntimeError("OPENAI_API_KEY not set")
         model = os.environ.get("BUDGIFY_LLM_MODEL", "gpt-3.5-turbo")
         return OpenAIProvider(model=model, api_key=api_key)
+    if provider == "ollama":
+        model = os.environ.get("BUDGIFY_LLM_MODEL", "llama3")
+        url = os.environ.get("OLLAMA_URL", _OLLAMA_URL)
+        return OllamaProvider(model=model, url=url)
     token = os.environ.get("HF_API_TOKEN")
     model = os.environ.get("BUDGIFY_LLM_MODEL", "Qwen/Qwen3-32B")
     return HuggingFaceProvider(model=model, token=token)

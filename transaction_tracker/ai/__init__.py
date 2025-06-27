@@ -7,6 +7,7 @@ from typing import List, Protocol
 from transaction_tracker.core.models import Transaction
 
 from huggingface_hub import InferenceClient
+from abc import ABC, abstractmethod
 
 
 _OPENAI_URL = "https://api.openai.com/v1/chat/completions"
@@ -15,6 +16,19 @@ _OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 class LLMProvider(Protocol):
     def generate(self, messages: List[dict]) -> str:
         """Return a completion for the given chat messages."""
+
+
+@dataclass
+class LLMClient:
+    """Simple client that delegates chat requests to an LLM provider."""
+    provider: LLMProvider | None = None
+
+    def __post_init__(self) -> None:
+        if self.provider is None:
+            self.provider = get_provider_from_env()
+
+    def chat(self, messages: List[dict]) -> str:
+        return self.provider.generate(messages)
 
 
 @dataclass
@@ -46,6 +60,42 @@ class OpenAIProvider:
         return resp_data["choices"][0]["message"]["content"].strip()
 
 
+class BaseAIOutput(ABC):
+    """Composable layer for building prompts and parsing LLM responses."""
+
+    @abstractmethod
+    def build_messages(self, transactions: List[Transaction]) -> List[dict]:
+        """Return chat messages describing the task."""
+
+    def post_process(self, response: str) -> str:
+        return response
+
+    def generate(self, transactions: List[Transaction], client: LLMClient | None = None) -> str:
+        if not transactions:
+            return "No transactions to analyze."
+        client = client or LLMClient()
+        messages = self.build_messages(transactions)
+        try:
+            out = client.chat(messages)
+        except Exception as e:
+            return f"Error contacting LLM: {e}"
+        return self.post_process(out)
+
+
+class InsightsReport(BaseAIOutput):
+    """Default report describing transaction insights."""
+
+    def build_messages(self, transactions: List[Transaction]) -> List[dict]:
+        lines = [_tx_to_line(tx) for tx in transactions]
+        return [
+            {
+                "role": "system",
+                "content": "Provide a short financial summary and insights for the user based on these transactions.",
+            },
+            {"role": "user", "content": "\n".join(lines)},
+        ]
+
+
 def _tx_to_line(tx: Transaction) -> str:
     return f"{tx.date.isoformat()} | {tx.description} | {tx.merchant} | {tx.amount:.2f}"
 
@@ -64,18 +114,7 @@ def get_provider_from_env() -> LLMProvider:
 
 
 def generate_report(transactions: List[Transaction], provider: LLMProvider | None = None) -> str:
-    """Send transactions to an LLM and return a textual report."""
-    if not transactions:
-        return "No transactions to analyze."
-
-    provider = provider or get_provider_from_env()
-    lines = [_tx_to_line(tx) for tx in transactions]
-    messages = [
-        {"role": "system", "content": 
-            "Provide a short financial summary and insights for the user based on these transactions."},
-        {"role": "user", "content": "\n".join(lines)},
-    ]
-    try:
-        return provider.generate(messages)
-    except Exception as e:
-        return f"Error contacting LLM: {e}"
+    """Convenience wrapper returning an insights report."""
+    client = LLMClient(provider)
+    report = InsightsReport()
+    return report.generate(transactions, client)

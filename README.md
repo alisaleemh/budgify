@@ -167,11 +167,12 @@ This will create (or update) a **"Budget 2025"** workbook in your Drive folder, 
 ### AI Report
 
 Pass `--ai-report` when running Budgify to send the final list of
-transactions to an LLM for analysis. By default the Hugging Face
-Inference API is used via the **Cerebras** provider. Set `HF_API_TOKEN`
-and optionally `BUDGIFY_LLM_MODEL` to choose the model. To use OpenAI
-instead set `BUDGIFY_LLM_PROVIDER=openai` and provide `OPENAI_API_KEY`.
-You can keep these variables in a `.env` file and load it with
+transactions to an LLM for analysis.  `transaction_tracker.ai` exposes an
+`LLMClient` capable of using multiple providers (Hugging Face or OpenAI
+via environment variables) and composable output layers.  The default
+`InsightsReport` class is used by the CLI.  Configure your provider with
+`HF_API_TOKEN` or `OPENAI_API_KEY` (and `BUDGIFY_LLM_PROVIDER=openai`).
+These variables can be stored in a `.env` file and loaded with
 `--env-file path/to/.env`.
 
 ## Extending

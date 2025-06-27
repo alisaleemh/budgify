@@ -21,11 +21,13 @@ setup(
         "google-api-python-client>=2.0.0",
         "huggingface_hub>=0.33",
         "python-dotenv>=1.0",
+        "mcp>=1.9",
 
     ],
     entry_points={
         "console_scripts": [
             "budgify=transaction_tracker.cli:main",
+            "budgify-mcp=transaction_tracker.mcp_server:main",
         ],
     },
     classifiers=[

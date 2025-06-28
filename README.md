@@ -175,6 +175,21 @@ via environment variables) and composable output layers.  The default
 These variables can be stored in a `.env` file and loaded with
 `--env-file path/to/.env`.
 
+To use a local LLM such as [Ollama](https://github.com/ollama/ollama), set
+`BUDGIFY_LLM_PROVIDER=ollama` and optionally `OLLAMA_URL` if your server is not
+running on `http://localhost:11434`.
+
+### MCP Server
+
+Budgify can be exposed as an MCP server so tools like a locally running LLM can
+invoke it directly. Install the optional `mcp` dependency and run:
+
+```bash
+budgify-mcp
+```
+
+This starts a FastMCP server exposing a single `run_budgify` tool.
+
 ## Extending
 
 ### Add a new bank loader

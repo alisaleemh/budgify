@@ -89,6 +89,7 @@ class SheetsOutput(BaseOutput):
             ws.clear()
             ws.update('A1', rows, value_input_option='USER_ENTERED')
             self._ensure_pivot(ws, rows, ws.title)
+            self._apply_formatting(ws, tab_rgb=(0.6,0.8,1.0))
 
         # 2) AllData tab: combine & dedupe
         all_rows = [['month','date','description','merchant','category','amount']]
@@ -106,6 +107,7 @@ class SheetsOutput(BaseOutput):
         all_ws = self._get_tab(sh, self.ALL_DATA, created, cols='6')
         all_ws.clear()
         all_ws.update('A1', all_rows, value_input_option='USER_ENTERED')
+        self._apply_formatting(all_ws, tab_rgb=(0.9,0.9,0.9))
 
         # 3) Summary tab: single pivot grouping month & category
         sum_ws = self._get_tab(sh, self.SUMMARY, created, cols='10')
@@ -146,6 +148,7 @@ class SheetsOutput(BaseOutput):
             spreadsheetId=sh.id,
             body={'requests': [pivot_req]}
         ).execute()
+        self._apply_formatting(sum_ws, tab_rgb=(0.7,0.7,0.7))
 
         # 4) Reorder tabs
         meta = self.sheets_srv.spreadsheets().get(
@@ -226,4 +229,77 @@ class SheetsOutput(BaseOutput):
         self.sheets_srv.spreadsheets().batchUpdate(
             spreadsheetId=ss,
             body={'requests':[pivot_req]}
+        ).execute()
+
+    def _apply_formatting(self, ws, tab_rgb=(0.8,0.9,1.0)):
+        """Apply basic formatting to the worksheet for better readability."""
+        ss       = ws.spreadsheet.id
+        meta     = self.sheets_srv.spreadsheets().get(
+            spreadsheetId=ss,
+            fields='sheets.properties'
+        ).execute()['sheets']
+        sheet_id = next(
+            s['properties']['sheetId']
+            for s in meta if s['properties']['title'] == ws.title
+        )
+
+        header_fmt = {
+            'repeatCell': {
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': 0,
+                    'endRowIndex': 1
+                },
+                'cell': {
+                    'userEnteredFormat': {
+                        'backgroundColor': {
+                            'red': 0.9,
+                            'green': 0.9,
+                            'blue': 0.9
+                        },
+                        'textFormat': {'bold': True}
+                    }
+                },
+                'fields': 'userEnteredFormat(backgroundColor,textFormat)'
+            }
+        }
+
+        amount_fmt = {
+            'repeatCell': {
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': 1,
+                    'startColumnIndex': 4,
+                    'endColumnIndex': 5
+                },
+                'cell': {
+                    'userEnteredFormat': {
+                        'numberFormat': {
+                            'type': 'CURRENCY',
+                            'pattern': '"$"#,##0.00'
+                        }
+                    }
+                },
+                'fields': 'userEnteredFormat.numberFormat'
+            }
+        }
+
+        freeze_req = {
+            'updateSheetProperties': {
+                'properties': {
+                    'sheetId': sheet_id,
+                    'gridProperties': {'frozenRowCount': 1},
+                    'tabColor': {
+                        'red': tab_rgb[0],
+                        'green': tab_rgb[1],
+                        'blue': tab_rgb[2]
+                    }
+                },
+                'fields': 'gridProperties.frozenRowCount,tabColor'
+            }
+        }
+
+        self.sheets_srv.spreadsheets().batchUpdate(
+            spreadsheetId=ss,
+            body={'requests': [header_fmt, amount_fmt, freeze_req]}
         ).execute()

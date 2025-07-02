@@ -129,6 +129,14 @@ budgify --dir ~/Downloads/statements --output csv
 ```
 
 Results:  `data/Budget2025.csv` (for year 2025), deduped and sorted by date.
+### HTML Export
+
+```bash
+budgify --dir ~/Downloads/statements --output html
+```
+
+Results:  `data/Budget2025.html`
+
 
 ### Manual Transactions
 

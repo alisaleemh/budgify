@@ -19,8 +19,8 @@ from transaction_tracker.ai import generate_report
 @click.option(
     '--output', 'output_format',
     default='csv',
-    type=click.Choice(['csv', 'sheets']),
-    help='Output target: csv or sheets'
+    type=click.Choice(['csv','sheets','html']),
+    help='Output target: csv, sheets or html'
 )
 @click.option(
     '--include-payments',

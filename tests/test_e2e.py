@@ -165,6 +165,9 @@ class FakeSpreadsheet:
     def share(self, *_a, **_k):
         pass
 
+    def list_permissions(self):
+        return [{'emailAddress': 'owner@example.com', 'role': 'writer'}]
+
 
 def setup_sheet_mocks(monkeypatch):
     class FakeCreds:

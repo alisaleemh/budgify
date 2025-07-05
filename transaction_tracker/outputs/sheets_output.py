@@ -68,7 +68,13 @@ class SheetsOutput(BaseOutput):
                     fields        = 'id,parents'
                 ).execute()
         if self.owner:
-            sh.share(self.owner, perm_type='user', role='writer')
+            try:
+                perms = sh.list_permissions()
+            except Exception:
+                perms = []
+            emails = {p.get('emailAddress') for p in perms}
+            if self.owner not in emails:
+                sh.share(self.owner, perm_type='user', role='writer')
 
         # 1) Monthly tabs
         for month_str in months:

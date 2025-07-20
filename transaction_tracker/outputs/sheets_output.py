@@ -34,6 +34,7 @@ class SheetsOutput(BaseOutput):
         self.sheets_srv = build('sheets', 'v4', credentials=creds)
         self.drive_srv  = build('drive', 'v3', credentials=creds)
         self.folder_id  = google_cfg.get('sheet_folder_id')
+        self.spreadsheet_id = google_cfg.get('spreadsheet_id')
         self.owner      = google_cfg.get('owner_email')
         self.config     = config
 
@@ -44,7 +45,13 @@ class SheetsOutput(BaseOutput):
             return
         first_dt = datetime.strptime(months[0], '%Y-%m')
         year = first_dt.year
-        ss_title = f"Budget {year}"
+        ss_title = ""
+        if self.spreadsheet_id:
+            sh = self.gc.open_by_key(self.spreadsheet_id)
+            created = False
+            ss_title = sh.title
+        else:
+            ss_title = f"Budget {year}"
 
         # Open or create spreadsheet
         try:
@@ -90,7 +97,7 @@ class SheetsOutput(BaseOutput):
                     tx.description,
                     tx.merchant,
                     categorize(tx, self.config['categories']) or '',
-                    f"{tx.amount:.2f}"
+                    tx.amount
                 ])
             ws.clear()
             ws.update('A1', rows, value_input_option='USER_ENTERED')
@@ -109,7 +116,12 @@ class SheetsOutput(BaseOutput):
                 key = (title,) + tuple(r)
                 if key not in seen:
                     seen.add(key)
-                    all_rows.append([title] + r)
+                    # Try parsing last column if it looks like a currency
+                    try:
+                        amount = float(r[-1].replace("$", "").replace(",", ""))
+                    except Exception:
+                        amount = 0.0
+                    all_rows.append([title] + r[:-1] + [amount])
         all_ws = self._get_tab(sh, self.ALL_DATA, created, cols='6')
         all_ws.clear()
         all_ws.update('A1', all_rows, value_input_option='USER_ENTERED')

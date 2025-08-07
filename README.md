@@ -66,6 +66,7 @@ bank_loaders:
 output_modules:
   csv:    "transaction_tracker.outputs.csv_output.CSVOutput"
   sheets: "transaction_tracker.outputs.sheets_output.SheetsOutput"
+  excel:  "transaction_tracker.outputs.excel_output.ExcelOutput"
 
 # Optional YAML listing any cash or other manual transactions
 manual_transactions_file: manual.yaml
@@ -129,6 +130,15 @@ budgify --dir ~/Downloads/statements --output csv
 ```
 
 Results:  `data/Budget2025.csv` (for year 2025), deduped and sorted by date.
+
+### Excel Export
+
+```bash
+budgify --dir ~/Downloads/statements --output excel
+```
+
+Generates a local `Budget2025.xlsx` workbook with monthly tabs, an `AllData` tab,
+and a `Summary` sheet summarizing amounts by month and category.
 
 ### Manual Transactions
 

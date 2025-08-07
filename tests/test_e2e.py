@@ -4,6 +4,7 @@ import sys
 import types
 import yaml
 from click.testing import CliRunner
+import openpyxl
 
 # Provide minimal google modules so sheets_output can be imported without
 # installing heavy dependencies.
@@ -59,6 +60,7 @@ def write_config(tmp_path, data_dir):
         'output_modules': {
             'csv': 'transaction_tracker.outputs.csv_output.CSVOutput',
             'sheets': 'transaction_tracker.outputs.sheets_output.SheetsOutput',
+            'excel': 'transaction_tracker.outputs.excel_output.ExcelOutput',
         },
         'categories': {
             'restaurants': ['restaurant'],
@@ -120,6 +122,29 @@ def test_cli_csv_output(tmp_path):
     assert len(lines) == 4  # header + 3 rows
     assert any('restaurants' in l for l in lines[1:])
     assert any('groceries' in l for l in lines[1:])
+
+
+def test_cli_excel_output(tmp_path):
+    stmts = tmp_path / 'stmts'
+    stmts.mkdir()
+    td_file = stmts / 'tdvisa.csv'
+    write_tdvisa_sample(td_file)
+    manual = tmp_path / 'manual.yaml'
+    write_manual(manual)
+    cfg_path = write_config(tmp_path, tmp_path / 'data')
+
+    runner = CliRunner()
+    res = runner.invoke(
+        cli,
+        ['--dir', str(stmts), '--output', 'excel', '--config', str(cfg_path), '--manual-file', str(manual)]
+    )
+    assert res.exit_code == 0, res.output
+    out_xlsx = tmp_path / 'data' / 'Budget2025.xlsx'
+    assert out_xlsx.exists()
+    wb = openpyxl.load_workbook(out_xlsx)
+    assert 'May 2025' in wb.sheetnames
+    assert 'AllData' in wb.sheetnames
+    assert 'Summary' in wb.sheetnames
 
 
 class FakeWorksheet:

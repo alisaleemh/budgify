@@ -59,6 +59,7 @@ def write_config(tmp_path, data_dir):
         'output_modules': {
             'csv': 'transaction_tracker.outputs.csv_output.CSVOutput',
             'sheets': 'transaction_tracker.outputs.sheets_output.SheetsOutput',
+            'html': 'transaction_tracker.outputs.html_output.HTMLOutput',
         },
         'categories': {
             'restaurants': ['restaurant'],
@@ -122,6 +123,25 @@ def test_cli_csv_output(tmp_path):
     assert any('groceries' in l for l in lines[1:])
 
 
+
+def test_cli_html_output(tmp_path):
+    stmts = tmp_path / 'stmts'
+    stmts.mkdir()
+    td_file = stmts / 'tdvisa.csv'
+    write_tdvisa_sample(td_file)
+    manual = tmp_path / 'manual.yaml'
+    write_manual(manual)
+    cfg_path = write_config(tmp_path, tmp_path / 'data')
+    runner = CliRunner()
+    res = runner.invoke(
+        cli,
+        ['--dir', str(stmts), '--output', 'html', '--config', str(cfg_path), '--manual-file', str(manual)]
+    )
+    assert res.exit_code == 0, res.output
+    out_html = tmp_path / 'data' / 'Budget2025.html'
+    assert out_html.exists()
+    assert '<table' in out_html.read_text()
+ 
 class FakeWorksheet:
     def __init__(self, title):
         self.title = title

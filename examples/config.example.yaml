@@ -8,6 +8,7 @@ bank_loaders:
 output_modules:
   csv: "transaction_tracker.outputs.csv_output.CSVOutput"
   sheets: "transaction_tracker.outputs.sheets_output.SheetsOutput"
+  html: "transaction_tracker.outputs.html_output.HTMLOutput"
 
 # Path to optional manual transaction YAML
 manual_transactions_file: manual.yaml

@@ -156,10 +156,48 @@ def test_cli_excel_output(tmp_path):
     if hasattr(xlsxwriter.Workbook, 'add_pivot_table'):
         with zipfile.ZipFile(out_xlsx) as zf:
             pivot_xml = ''
-            pivot_files = [n for n in zf.namelist() if n.startswith('xl/pivotTables/pivotTable')]
+            pivot_files = [
+                n for n in zf.namelist() if n.startswith('xl/pivotTables/pivotTable')
+            ]
             assert len(pivot_files) == 2
             for name in pivot_files:
                 pivot_xml += zf.read(name).decode('utf-8')
+
+            import xml.etree.ElementTree as ET
+
+            wb_tree = ET.fromstring(zf.read('xl/workbook.xml'))
+            rels_tree = ET.fromstring(zf.read('xl/_rels/workbook.xml.rels'))
+            ns_main = {
+                'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+            }
+            ns_rel = {
+                'rel': 'http://schemas.openxmlformats.org/package/2006/relationships'
+            }
+            r_id = None
+            for sheet in wb_tree.find('main:sheets', ns_main).findall('main:sheet', ns_main):
+                if sheet.get('name') == 'Summary':
+                    r_id = sheet.get(
+                        '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id'
+                    )
+                    break
+            assert r_id is not None
+            target = None
+            for rel in rels_tree.findall('rel:Relationship', ns_rel):
+                if rel.get('Id') == r_id:
+                    target = rel.get('Target')
+                    break
+            assert target is not None
+            summary_rel_path = f"xl/worksheets/_rels/{os.path.basename(target)}.rels"
+            summary_rel_xml = zf.read(summary_rel_path).decode('utf-8')
+            assert 'pivotTable' in summary_rel_xml
+
+            cache_defs = ''.join(
+                zf.read(name).decode('utf-8')
+                for name in zf.namelist()
+                if name.startswith('xl/pivotCache/pivotCacheDefinition')
+            )
+            assert 'sheet="AllData"' in cache_defs
+
         assert 'name="Pivot_May_2025"' in pivot_xml
         assert 'name="Pivot_Summary"' in pivot_xml
 

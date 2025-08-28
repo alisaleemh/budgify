@@ -102,19 +102,22 @@ class ExcelOutput(BaseOutput):
         })
 
         # Summary worksheet with cross-month PivotTable
-        workbook.add_worksheet(self.SUMMARY)
+        summary_ws = workbook.add_worksheet(self.SUMMARY)
+        summary_ws.freeze_panes(1, 0)
         if all_rows and supports_pivot:
             data_range = f"A1:F{len(all_rows) + 1}"
-            workbook.add_pivot_table({
-                "name": "Pivot_Summary",
-                "source": f"'{self.ALL_DATA}'!{data_range}",
-                "dest": f"'{self.SUMMARY}'!A3",
-                "fields": {
-                    "category": "row",
-                    "month": "column",
-                    "amount": "sum",
-                },
-            })
+            workbook.add_pivot_table(
+                {
+                    "name": "Pivot_Summary",
+                    "source": f"'{self.ALL_DATA}'!{data_range}",
+                    "dest": f"'{summary_ws.name}'!A1",
+                    "fields": {
+                        "category": "row",
+                        "month": "column",
+                        "amount": "sum",
+                    },
+                }
+            )
 
         workbook.close()
         print(f"Written Excel workbook {out_path}")

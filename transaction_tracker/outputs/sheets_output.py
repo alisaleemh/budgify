@@ -111,17 +111,23 @@ class SheetsOutput(BaseOutput):
             title = ws.title
             if title in (self.ALL_DATA, self.SUMMARY):
                 continue
-            data = ws.get_all_values()[1:]
+            # Only consider the first five columns (transaction data) to avoid
+            # picking up pivot-table output appended to the worksheet.
+            data = [row[:5] for row in ws.get_all_values()[1:]]
             for r in data:
                 key = (title,) + tuple(r)
                 if key not in seen:
                     seen.add(key)
-                    # Try parsing last column if it looks like a currency
+                    # Try parsing the amount column if it looks like a currency
+                    val = r[4]
                     try:
-                        amount = float(r[-1].replace("$", "").replace(",", ""))
+                        amount = float(
+                            val if isinstance(val, (int, float))
+                            else val.replace("$", "").replace(",", "")
+                        )
                     except Exception:
                         amount = 0.0
-                    all_rows.append([title] + r[:-1] + [amount])
+                    all_rows.append([title] + r[:4] + [amount])
         all_ws = self._get_tab(sh, self.ALL_DATA, created, cols='6')
         all_ws.clear()
         all_ws.update('A1', all_rows, value_input_option='USER_ENTERED')

@@ -164,6 +164,11 @@ class FakeWorksheet:
             self.rows = _args[1]
 
     def get_all_values(self):
+        # Simulate pivot-table columns appended to the right of transaction
+        # data, which happens in the real Google Sheets output. Only
+        # non-aggregate tabs (i.e., monthly tabs) include these extra values.
+        if self.title not in ('AllData', 'Summary'):
+            return [row + ['0'] for row in self.rows]
         return self.rows
 
 
@@ -246,12 +251,14 @@ def setup_sheet_mocks(monkeypatch):
         return Dummy()
 
     monkeypatch.setattr(sheets_output, 'Credentials', FakeCreds)
+    client = FakeClient()
     monkeypatch.setattr(
         sheets_output,
         'gspread',
-        types.SimpleNamespace(authorize=lambda *_a, **_k: FakeClient(), exceptions=FakeExceptions)
+        types.SimpleNamespace(authorize=lambda *_a, **_k: client, exceptions=FakeExceptions)
     )
     monkeypatch.setattr(sheets_output, 'build', fake_build)
+    return client
 
 
 def test_cli_sheets_output(tmp_path, monkeypatch):
@@ -271,6 +278,27 @@ def test_cli_sheets_output(tmp_path, monkeypatch):
     )
     assert res.exit_code == 0, res.output
     assert 'Appended 3 transaction' in res.output
+
+
+def test_all_data_preserves_amounts(tmp_path, monkeypatch):
+    client = setup_sheet_mocks(monkeypatch)
+    stmts = tmp_path / 'stmts'
+    stmts.mkdir()
+    td_file = stmts / 'tdvisa.csv'
+    write_tdvisa_sample(td_file)
+    manual = tmp_path / 'manual.yaml'
+    write_manual(manual)
+    cfg_path = write_config(tmp_path, tmp_path / 'data')
+
+    runner = CliRunner()
+    res = runner.invoke(
+        cli,
+        ['--dir', str(stmts), '--output', 'sheets', '--config', str(cfg_path), '--manual-file', str(manual)]
+    )
+    assert res.exit_code == 0, res.output
+    all_rows = client.sheet.worksheet('AllData').rows
+    amounts = sorted(r[-1] for r in all_rows[1:])
+    assert amounts == sorted([56.78, 12.34, 10.0])
 
 
 def test_cli_ai_report(tmp_path, monkeypatch):

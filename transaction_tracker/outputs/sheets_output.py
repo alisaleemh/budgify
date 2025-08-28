@@ -1,6 +1,7 @@
 # transaction_tracker/outputs/sheets_output.py
 
 import gspread
+from gspread.utils import rowcol_to_a1
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from datetime import datetime
@@ -101,6 +102,7 @@ class SheetsOutput(BaseOutput):
                 ])
             ws.clear()
             ws.update('A1', rows, value_input_option='USER_ENTERED')
+            self._apply_table_and_sort(ws, rows, amount_col=5)
             self._ensure_pivot(ws, rows, ws.title)
             self._apply_formatting(ws, tab_rgb=(0.6,0.8,1.0))
 
@@ -131,6 +133,7 @@ class SheetsOutput(BaseOutput):
         all_ws = self._get_tab(sh, self.ALL_DATA, created, cols='6')
         all_ws.clear()
         all_ws.update('A1', all_rows, value_input_option='USER_ENTERED')
+        self._apply_table_and_sort(all_ws, all_rows, amount_col=6)
         self._apply_formatting(all_ws, tab_rgb=(0.9,0.9,0.9))
 
         # 3) Summary tab: single pivot grouping month & category
@@ -201,6 +204,15 @@ class SheetsOutput(BaseOutput):
             ).execute()
 
         print(f"Built tabs for {len(months)} months, AllData, Summary, and reordered tabs in '{ss_title}'.")
+
+    def _apply_table_and_sort(self, ws, rows, amount_col):
+        """Format worksheet range as a filterable table and sort by amount."""
+        if not rows:
+            return
+        end_row = len(rows)
+        end_cell = rowcol_to_a1(end_row, amount_col)
+        ws.set_basic_filter(f"A1:{end_cell}")
+        ws.sort((amount_col, 'des'), range=f"A2:{end_cell}")
 
     def _get_tab(self, sh, title, created_ss, rows='100', cols='10'):
         try:

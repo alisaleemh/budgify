@@ -13,6 +13,16 @@ fake_gspread.exceptions = types.SimpleNamespace(
     SpreadsheetNotFound=Exception, WorksheetNotFound=Exception
 )
 fake_gspread.authorize = lambda *_a, **_k: None
+fake_gspread.__path__ = []
+def _rowcol_to_a1(row, col):
+    letters = ""
+    while col:
+        col, rem = divmod(col - 1, 26)
+        letters = chr(rem + ord('A')) + letters
+    return f"{letters}{row}"
+fake_utils = types.ModuleType("gspread.utils")
+fake_utils.rowcol_to_a1 = _rowcol_to_a1
+fake_gspread.utils = fake_utils
 
 fake_service_account = types.ModuleType("google.oauth2.service_account")
 
@@ -35,6 +45,7 @@ def fake_build(*_a, **_k):
 fake_discovery.build = fake_build
 
 sys.modules.setdefault("gspread", fake_gspread)
+sys.modules.setdefault("gspread.utils", fake_utils)
 sys.modules.setdefault("google.oauth2.service_account", fake_service_account)
 sys.modules.setdefault("googleapiclient.discovery", fake_discovery)
 
@@ -162,6 +173,12 @@ class FakeWorksheet:
     def update(self, *_args, **_kwargs):
         if _args:
             self.rows = _args[1]
+
+    def set_basic_filter(self, *_a, **_k):
+        pass
+
+    def sort(self, *_a, **_k):
+        pass
 
     def get_all_values(self):
         # Simulate pivot-table columns appended to the right of transaction

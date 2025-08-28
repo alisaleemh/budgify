@@ -1,27 +1,34 @@
 # transaction_tracker/outputs/excel_output.py
 
+"""Excel output module backed by XlsxWriter.
+
+This module writes transactions to an Excel workbook and adds native
+PivotTables summarizing spending by category. Each month's worksheet
+contains a PivotTable showing the total amount per category for that
+month. A "Summary" worksheet contains a PivotTable aggregating all
+months with categories as rows and months as columns.
+"""
+
+from __future__ import annotations
+
 from datetime import datetime
-from calendar import month_name
 import os
-import pandas as pd
-from openpyxl import Workbook
-from openpyxl.utils import get_column_letter
-from openpyxl.styles import Font, PatternFill, numbers
+import xlsxwriter
 
 from transaction_tracker.outputs.base import BaseOutput
 from transaction_tracker.core.categorizer import categorize
 
 
 class ExcelOutput(BaseOutput):
-    """Local Excel workbook similar to SheetsOutput."""
+    """Generate a local Excel workbook with PivotTables."""
 
     MONTH_FMT = "%B %Y"
     ALL_DATA = "AllData"
     SUMMARY = "Summary"
 
-    def __init__(self, config):
+    def __init__(self, config: dict):
         self.config = config
-        self.output_dir = config.get('output_dir', 'data')
+        self.output_dir = config.get("output_dir", "data")
         os.makedirs(self.output_dir, exist_ok=True)
 
     def append(self, transactions):
@@ -29,23 +36,27 @@ class ExcelOutput(BaseOutput):
             print("No transactions to write.")
             return
 
-        months = sorted({tx.date.strftime('%Y-%m') for tx in transactions})
+        months = sorted({tx.date.strftime("%Y-%m") for tx in transactions})
         first_dt = datetime.strptime(months[0], "%Y-%m")
         year = first_dt.year
         out_path = os.path.join(self.output_dir, f"Budget{year}.xlsx")
 
-        wb = Workbook()
-        if wb.active.title == "Sheet":
-            wb.remove(wb.active)
+        workbook = xlsxwriter.Workbook(out_path)
+        amount_fmt = workbook.add_format({"num_format": "$#,##0.00"})
+        supports_pivot = hasattr(workbook, "add_pivot_table")
 
-        # Monthly tabs
         all_rows = []
         for month_str in months:
             dt = datetime.strptime(month_str, "%Y-%m")
-            tab_title = dt.strftime(self.MONTH_FMT)
-            ws = wb.create_sheet(title=tab_title)
-            ws.append(["date", "description", "merchant", "category", "amount"])
-            ws.freeze_panes = "A2"
+            sheet_name = dt.strftime(self.MONTH_FMT)
+            ws = workbook.add_worksheet(sheet_name)
+            ws.freeze_panes(1, 0)
+
+            headers = ["date", "description", "merchant", "category", "amount"]
+            ws.write_row(0, 0, headers)
+
+            month_rows = []
+            row_idx = 1
             for tx in transactions:
                 if tx.date.strftime("%Y-%m") != month_str:
                     continue
@@ -57,39 +68,57 @@ class ExcelOutput(BaseOutput):
                     cat,
                     float(tx.amount),
                 ]
-                ws.append(row)
-                all_rows.append([tab_title] + row)
-            self._format_amount_column(ws, 5)
+                ws.write_row(row_idx, 0, row[:4])
+                ws.write_number(row_idx, 4, row[4], amount_fmt)
+                month_rows.append(row)
+                all_rows.append([sheet_name] + row)
+                row_idx += 1
 
-        # AllData tab
-        all_ws = wb.create_sheet(title=self.ALL_DATA)
-        all_ws.append(["month", "date", "description", "merchant", "category", "amount"])
-        for row in all_rows:
-            all_ws.append(row)
-        all_ws.freeze_panes = "A2"
-        self._format_amount_column(all_ws, 6)
+            ws.set_column(4, 4, None, amount_fmt)
+            ws.add_table(0, 0, len(month_rows), 4, {
+                "columns": [{"header": h} for h in headers]
+            })
 
-        # Summary tab via pandas pivot
-        sum_ws = wb.create_sheet(title=self.SUMMARY)
-        df = pd.DataFrame(all_rows, columns=["month", "date", "description", "merchant", "category", "amount"])
-        pivot = (
-            df.pivot_table(index=["month", "category"], values="amount", aggfunc="sum")
-            .reset_index()
-            .sort_values(["month", "category"])
-        )
-        sum_ws.append(["month", "category", "amount"])
-        for _, r in pivot.iterrows():
-            sum_ws.append([r["month"], r["category"], float(r["amount"] or 0)])
-        sum_ws.freeze_panes = "A2"
-        self._format_amount_column(sum_ws, 3)
+            if month_rows and supports_pivot:
+                data_range = f"A1:E{len(month_rows) + 1}"
+                workbook.add_pivot_table({
+                    "name": f"Pivot_{sheet_name.replace(' ', '_')}",
+                    "source": f"'{sheet_name}'!{data_range}",
+                    "dest": f"'{sheet_name}'!G3",
+                    "fields": {"category": "row", "amount": "sum"},
+                })
 
-        wb.save(out_path)
+        # AllData worksheet consolidating all transactions
+        all_ws = workbook.add_worksheet(self.ALL_DATA)
+        all_ws.freeze_panes(1, 0)
+        all_headers = ["month", "date", "description", "merchant", "category", "amount"]
+        all_ws.write_row(0, 0, all_headers)
+        for idx, row in enumerate(all_rows, start=1):
+            all_ws.write_row(idx, 0, row[:5])
+            all_ws.write_number(idx, 5, row[5], amount_fmt)
+        all_ws.set_column(5, 5, None, amount_fmt)
+        all_ws.add_table(0, 0, len(all_rows), 5, {
+            "columns": [{"header": h} for h in all_headers]
+        })
+
+        # Summary worksheet with cross-month PivotTable
+        summary_ws = workbook.add_worksheet(self.SUMMARY)
+        summary_ws.freeze_panes(1, 0)
+        if all_rows and supports_pivot:
+            data_range = f"A1:F{len(all_rows) + 1}"
+            workbook.add_pivot_table(
+                {
+                    "name": "Pivot_Summary",
+                    "source": f"'{self.ALL_DATA}'!{data_range}",
+                    "dest": f"'{summary_ws.name}'!A1",
+                    "fields": {
+                        "category": "row",
+                        "month": "column",
+                        "amount": "sum",
+                    },
+                }
+            )
+
+        workbook.close()
         print(f"Written Excel workbook {out_path}")
 
-    def _format_amount_column(self, ws, idx):
-        for cell in ws[1]:
-            cell.font = Font(bold=True)
-            cell.fill = PatternFill(start_color="E5E5E5", end_color="E5E5E5", fill_type="solid")
-        col_letter = get_column_letter(idx)
-        for cell in ws[col_letter][1:]:
-            cell.number_format = numbers.FORMAT_CURRENCY_USD_SIMPLE

@@ -22,6 +22,7 @@ setup(
         "huggingface_hub>=0.33",
         "python-dotenv>=1.0",
         "mcp>=1.9",
+        "XlsxWriter>=3.1",
 
     ],
     entry_points={

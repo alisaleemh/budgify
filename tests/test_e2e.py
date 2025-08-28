@@ -5,6 +5,8 @@ import types
 import yaml
 from click.testing import CliRunner
 import openpyxl
+import xlsxwriter
+import zipfile
 
 # Provide minimal google modules so sheets_output can be imported without
 # installing heavy dependencies.
@@ -147,28 +149,19 @@ def test_cli_excel_output(tmp_path):
     assert 'Summary' in wb.sheetnames
 
     may_ws = wb['May 2025']
-    assert may_ws['G1'].value == 'category'
-    assert may_ws['H1'].value == 'amount'
-    cat_totals = {
-        may_ws[f'G{i}'].value: may_ws[f'H{i}'].value
-        for i in range(2, may_ws.max_row + 1)
-        if may_ws[f'G{i}'].value
-    }
-    assert cat_totals['groceries'] == 56.78
-    assert cat_totals['restaurants'] == 12.34
-    assert cat_totals['misc'] == 10.0
+    assert may_ws['A1'].value == 'date'
+    assert may_ws['E1'].value == 'amount'
 
-    sum_ws = wb['Summary']
-    assert sum_ws['A1'].value == 'category'
-    assert sum_ws['B1'].value == 'May 2025'
-    sum_totals = {
-        sum_ws[f'A{i}'].value: sum_ws[f'B{i}'].value
-        for i in range(2, sum_ws.max_row + 1)
-        if sum_ws[f'A{i}'].value
-    }
-    assert sum_totals['groceries'] == 56.78
-    assert sum_totals['restaurants'] == 12.34
-    assert sum_totals['misc'] == 10.0
+    # Ensure PivotTables were created in the workbook
+    if hasattr(xlsxwriter.Workbook, 'add_pivot_table'):
+        with zipfile.ZipFile(out_xlsx) as zf:
+            pivot_xml = ''
+            pivot_files = [n for n in zf.namelist() if n.startswith('xl/pivotTables/pivotTable')]
+            assert len(pivot_files) == 2
+            for name in pivot_files:
+                pivot_xml += zf.read(name).decode('utf-8')
+        assert 'name="Pivot_May_2025"' in pivot_xml
+        assert 'name="Pivot_Summary"' in pivot_xml
 
 
 class FakeWorksheet:

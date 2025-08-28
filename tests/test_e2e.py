@@ -141,10 +141,34 @@ def test_cli_excel_output(tmp_path):
     assert res.exit_code == 0, res.output
     out_xlsx = tmp_path / 'data' / 'Budget2025.xlsx'
     assert out_xlsx.exists()
-    wb = openpyxl.load_workbook(out_xlsx)
+    wb = openpyxl.load_workbook(out_xlsx, data_only=True)
     assert 'May 2025' in wb.sheetnames
     assert 'AllData' in wb.sheetnames
     assert 'Summary' in wb.sheetnames
+
+    may_ws = wb['May 2025']
+    assert may_ws['G1'].value == 'category'
+    assert may_ws['H1'].value == 'amount'
+    cat_totals = {
+        may_ws[f'G{i}'].value: may_ws[f'H{i}'].value
+        for i in range(2, may_ws.max_row + 1)
+        if may_ws[f'G{i}'].value
+    }
+    assert cat_totals['groceries'] == 56.78
+    assert cat_totals['restaurants'] == 12.34
+    assert cat_totals['misc'] == 10.0
+
+    sum_ws = wb['Summary']
+    assert sum_ws['A1'].value == 'category'
+    assert sum_ws['B1'].value == 'May 2025'
+    sum_totals = {
+        sum_ws[f'A{i}'].value: sum_ws[f'B{i}'].value
+        for i in range(2, sum_ws.max_row + 1)
+        if sum_ws[f'A{i}'].value
+    }
+    assert sum_totals['groceries'] == 56.78
+    assert sum_totals['restaurants'] == 12.34
+    assert sum_totals['misc'] == 10.0
 
 
 class FakeWorksheet:

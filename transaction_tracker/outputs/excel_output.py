@@ -1,7 +1,6 @@
 # transaction_tracker/outputs/excel_output.py
 
 from datetime import datetime
-from calendar import month_name
 import os
 import pandas as pd
 from openpyxl import Workbook
@@ -46,6 +45,7 @@ class ExcelOutput(BaseOutput):
             ws = wb.create_sheet(title=tab_title)
             ws.append(["date", "description", "merchant", "category", "amount"])
             ws.freeze_panes = "A2"
+            month_rows = []
             for tx in transactions:
                 if tx.date.strftime("%Y-%m") != month_str:
                     continue
@@ -58,7 +58,23 @@ class ExcelOutput(BaseOutput):
                     float(tx.amount),
                 ]
                 ws.append(row)
+                month_rows.append(row)
                 all_rows.append([tab_title] + row)
+            # Pivot per category on the right
+            if month_rows:
+                df_month = pd.DataFrame(month_rows, columns=["date", "description", "merchant", "category", "amount"])
+                pivot = (
+                    df_month.pivot_table(index="category", values="amount", aggfunc="sum")
+                    .reset_index()
+                    .sort_values("category")
+                )
+                start_col = 7  # column G
+                ws.cell(row=1, column=start_col, value="category")
+                ws.cell(row=1, column=start_col + 1, value="amount")
+                for idx, r in pivot.iterrows():
+                    ws.cell(row=2 + idx, column=start_col, value=r["category"])
+                    ws.cell(row=2 + idx, column=start_col + 1, value=float(r["amount"] or 0))
+                self._format_amount_column(ws, start_col + 1)
             self._format_amount_column(ws, 5)
 
         # AllData tab
@@ -69,19 +85,29 @@ class ExcelOutput(BaseOutput):
         all_ws.freeze_panes = "A2"
         self._format_amount_column(all_ws, 6)
 
-        # Summary tab via pandas pivot
+        # Summary tab with month columns and categories rows
         sum_ws = wb.create_sheet(title=self.SUMMARY)
-        df = pd.DataFrame(all_rows, columns=["month", "date", "description", "merchant", "category", "amount"])
-        pivot = (
-            df.pivot_table(index=["month", "category"], values="amount", aggfunc="sum")
-            .reset_index()
-            .sort_values(["month", "category"])
+        df = pd.DataFrame(
+            all_rows,
+            columns=["month", "date", "description", "merchant", "category", "amount"],
         )
-        sum_ws.append(["month", "category", "amount"])
-        for _, r in pivot.iterrows():
-            sum_ws.append([r["month"], r["category"], float(r["amount"] or 0)])
-        sum_ws.freeze_panes = "A2"
-        self._format_amount_column(sum_ws, 3)
+        pivot = df.pivot_table(
+            index="category",
+            columns="month",
+            values="amount",
+            aggfunc="sum",
+            fill_value=0,
+        )
+        # Ensure columns in chronological order
+        month_titles = [datetime.strptime(m, "%Y-%m").strftime(self.MONTH_FMT) for m in months]
+        pivot = pivot.reindex(columns=month_titles, fill_value=0).sort_index()
+        header = ["category"] + list(pivot.columns)
+        sum_ws.append(header)
+        for cat in pivot.index:
+            sum_ws.append([cat] + [float(pivot.at[cat, m]) for m in pivot.columns])
+        sum_ws.freeze_panes = "B2"
+        for idx in range(2, len(header) + 1):
+            self._format_amount_column(sum_ws, idx)
 
         wb.save(out_path)
         print(f"Written Excel workbook {out_path}")

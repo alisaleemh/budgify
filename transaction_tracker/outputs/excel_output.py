@@ -110,7 +110,7 @@ class ExcelOutput(BaseOutput):
                 {
                     "name": "Pivot_Summary",
                     "source": f"'{self.ALL_DATA}'!{data_range}",
-                    "dest": f"'{summary_ws.name}'!A1",
+                    "dest": f"'{self.SUMMARY}'!A1",
                     "fields": {
                         "category": "row",
                         "month": "column",

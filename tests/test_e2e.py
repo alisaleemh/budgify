@@ -7,6 +7,7 @@ from click.testing import CliRunner
 import openpyxl
 import xlsxwriter
 import zipfile
+import pytest
 
 # Provide minimal google modules so sheets_output can be imported without
 # installing heavy dependencies.
@@ -162,6 +163,8 @@ def test_cli_excel_output(tmp_path):
     may_ws = wb['May 2025']
     assert may_ws['A1'].value == 'date'
     assert may_ws['E1'].value == 'amount'
+    amounts = [c[0].value for c in may_ws.iter_rows(min_row=2, min_col=5, max_col=5)]
+    assert amounts == sorted(amounts, key=abs, reverse=True)
 
     # Ensure PivotTables were created in the workbook
     if hasattr(xlsxwriter.Workbook, 'add_pivot_table'):
@@ -170,7 +173,7 @@ def test_cli_excel_output(tmp_path):
             pivot_files = [
                 n for n in zf.namelist() if n.startswith('xl/pivotTables/pivotTable')
             ]
-            assert len(pivot_files) == 2
+            assert len(pivot_files) == 1
             for name in pivot_files:
                 pivot_xml += zf.read(name).decode('utf-8')
 
@@ -200,17 +203,16 @@ def test_cli_excel_output(tmp_path):
             assert target is not None
             summary_rel_path = f"xl/worksheets/_rels/{os.path.basename(target)}.rels"
             summary_rel_xml = zf.read(summary_rel_path).decode('utf-8')
-            assert 'pivotTable' in summary_rel_xml
-
-            cache_defs = ''.join(
-                zf.read(name).decode('utf-8')
-                for name in zf.namelist()
-                if name.startswith('xl/pivotCache/pivotCacheDefinition')
-            )
-            assert 'sheet="AllData"' in cache_defs
+            assert 'pivotTable' not in summary_rel_xml
 
         assert 'name="Pivot_May_2025"' in pivot_xml
-        assert 'name="Pivot_Summary"' in pivot_xml
+        assert 'Pivot_Summary' not in pivot_xml
+
+    summary_ws = wb['Summary']
+    rows = list(summary_ws.values)
+    assert ('May 2025 Total', None, pytest.approx(79.12)) in rows
+    assert rows[-1][0] == 'Grand Total'
+    assert rows[-1][2] == pytest.approx(79.12)
 
 
 class FakeWorksheet:

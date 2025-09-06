@@ -137,8 +137,10 @@ Results:  `data/Budget2025.csv` (for year 2025), deduped and sorted by date.
 budgify --dir ~/Downloads/statements --output excel
 ```
 
-Generates a local `Budget2025.xlsx` workbook with monthly tabs, an `AllData` tab,
-and a `Summary` sheet summarizing amounts by month and category.
+Generates a local `Budget2025.xlsx` workbook with monthly tabs (sorted from
+largest to smallest transaction), an `AllData` tab, and a manually generated
+`Summary` sheet that aggregates totals by month and category without using Excel
+PivotTables.
 
 ### Manual Transactions
 

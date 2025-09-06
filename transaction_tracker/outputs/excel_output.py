@@ -2,11 +2,11 @@
 
 """Excel output module backed by XlsxWriter.
 
-This module writes transactions to an Excel workbook and adds native
-PivotTables summarizing spending by category. Each month's worksheet
-contains a PivotTable showing the total amount per category for that
-month. A "Summary" worksheet contains a PivotTable aggregating all
-months with categories as rows and months as columns.
+This module writes transactions to an Excel workbook. Each month's
+worksheet optionally includes a native PivotTable showing the total
+amount per category for that month. A separate ``Summary`` worksheet is
+generated manually (no Excel PivotTable) to aggregate spending by
+category for each month and overall.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from transaction_tracker.core.categorizer import categorize
 
 
 class ExcelOutput(BaseOutput):
-    """Generate a local Excel workbook with PivotTables."""
+    """Generate a local Excel workbook with optional PivotTables."""
 
     MONTH_FMT = "%B %Y"
     ALL_DATA = "AllData"
@@ -46,6 +46,8 @@ class ExcelOutput(BaseOutput):
         supports_pivot = hasattr(workbook, "add_pivot_table")
 
         all_rows = []
+        monthly_totals = {}
+        summary_data = {}
         for month_str in months:
             dt = datetime.strptime(month_str, "%Y-%m")
             sheet_name = dt.strftime(self.MONTH_FMT)
@@ -56,7 +58,6 @@ class ExcelOutput(BaseOutput):
             ws.write_row(0, 0, headers)
 
             month_rows = []
-            row_idx = 1
             for tx in transactions:
                 if tx.date.strftime("%Y-%m") != month_str:
                     continue
@@ -68,11 +69,21 @@ class ExcelOutput(BaseOutput):
                     cat,
                     float(tx.amount),
                 ]
-                ws.write_row(row_idx, 0, row[:4])
-                ws.write_number(row_idx, 4, row[4], amount_fmt)
                 month_rows.append(row)
                 all_rows.append([sheet_name] + row)
+                summary_data.setdefault(sheet_name, {}).setdefault(cat, 0.0)
+                summary_data[sheet_name][cat] += row[4]
+
+            # Sort transactions by absolute amount, largest first
+            month_rows.sort(key=lambda r: abs(r[4]), reverse=True)
+
+            row_idx = 1
+            for row in month_rows:
+                ws.write_row(row_idx, 0, row[:4])
+                ws.write_number(row_idx, 4, row[4], amount_fmt)
                 row_idx += 1
+
+            monthly_totals[sheet_name] = sum(r[4] for r in month_rows)
 
             ws.set_column(4, 4, None, amount_fmt)
             ws.add_table(0, 0, len(month_rows), 4, {
@@ -101,23 +112,29 @@ class ExcelOutput(BaseOutput):
             "columns": [{"header": h} for h in all_headers]
         })
 
-        # Summary worksheet with cross-month PivotTable
+        # Summary worksheet manually aggregating by month & category
         summary_ws = workbook.add_worksheet(self.SUMMARY)
         summary_ws.freeze_panes(1, 0)
-        if all_rows and supports_pivot:
-            data_range = f"A1:F{len(all_rows) + 1}"
-            workbook.add_pivot_table(
-                {
-                    "name": "Pivot_Summary",
-                    "source": f"'{self.ALL_DATA}'!{data_range}",
-                    "dest": f"'{summary_ws.name}'!A1",
-                    "fields": {
-                        "category": "row",
-                        "month": "column",
-                        "amount": "sum",
-                    },
-                }
-            )
+        summary_ws.set_column(2, 2, None, amount_fmt)
+        row_idx = 0
+        grand_total = 0.0
+        for month_str in months:
+            sheet_name = datetime.strptime(month_str, "%Y-%m").strftime(self.MONTH_FMT)
+            cats = summary_data.get(sheet_name, {})
+            for i, cat in enumerate(sorted(cats)):
+                amount = cats[cat]
+                if i == 0:
+                    summary_ws.write(row_idx, 0, sheet_name)
+                summary_ws.write(row_idx, 1, cat)
+                summary_ws.write_number(row_idx, 2, amount, amount_fmt)
+                row_idx += 1
+            month_total = monthly_totals.get(sheet_name, 0.0)
+            summary_ws.write(row_idx, 0, f"{sheet_name} Total")
+            summary_ws.write_number(row_idx, 2, month_total, amount_fmt)
+            grand_total += month_total
+            row_idx += 1
+        summary_ws.write(row_idx, 0, "Grand Total")
+        summary_ws.write_number(row_idx, 2, grand_total, amount_fmt)
 
         workbook.close()
         print(f"Written Excel workbook {out_path}")

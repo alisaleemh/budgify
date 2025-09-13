@@ -206,7 +206,6 @@ budgify-mcp
 
 This starts a FastMCP server exposing:
 
-- `run_budgify` – process statements using the Budgify CLI.
 - `get_transactions` – fetch transactions from a SQLite database.
 
 ## Extending

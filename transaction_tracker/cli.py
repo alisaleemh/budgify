@@ -8,6 +8,7 @@ from transaction_tracker.outputs import get_output
 from transaction_tracker.utils import dedupe_transactions
 from transaction_tracker.manual import load_manual_transactions
 from transaction_tracker.ai import generate_report
+from transaction_tracker.database import append_transactions
 
 @click.command()
 @click.option(
@@ -47,12 +48,19 @@ from transaction_tracker.ai import generate_report
     help='Optional .env file containing API tokens for AI providers'
 )
 @click.option(
+    '--db', 'db_path',
+    default=None,
+    type=click.Path(dir_okay=False),
+    help='Optional SQLite database file to also store transactions'
+)
+@click.option(
     '--ai-report',
     is_flag=True,
     default=False,
     help='Send transactions to an LLM and display the generated report.'
 )
-def main(statements_dir, output_format, include_payments, config_path, manual_file, env_file, ai_report):
+def main(statements_dir, output_format, include_payments, config_path,
+         manual_file, env_file, db_path, ai_report):
     """
     Scan a directory of mixed-bank statements, auto-detect bank by filename,
     parse each file, dedupe the full set, and output to CSV or a multi-tab
@@ -66,6 +74,7 @@ def main(statements_dir, output_format, include_payments, config_path, manual_fi
     cfg = load_config(config_path)
     loaders = cfg['bank_loaders']
     manual_cfg_path = manual_file or cfg.get('manual_transactions_file')
+    db_path = db_path or cfg.get('db_path')
 
     # Collect all transactions across all files
     all_txs = []
@@ -94,6 +103,10 @@ def main(statements_dir, output_format, include_payments, config_path, manual_fi
     # Output
     outputter = get_output(output_format, cfg)
     outputter.append(unique_txs)
+
+    if db_path:
+        append_transactions(unique_txs, db_path, cfg.get('categories', {}))
+        click.echo(f"Stored {len(unique_txs)} transaction(s) in {db_path}.")
 
     click.echo(
         f"Appended {len(unique_txs)} transaction(s) to {output_format.upper()}."

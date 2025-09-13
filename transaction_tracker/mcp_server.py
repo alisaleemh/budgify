@@ -9,7 +9,7 @@ from transaction_tracker.database import fetch_transactions
 
 server = FastMCP(name="Budgify", instructions="Expose Budgify as an MCP tool")
 
-CATEGORIES = ["restaurants", "groceries", "fun", "fuel", "misc"]
+CATEGORIES = ["subscription", "car", "misc", "restaurants", "groceries", "communications", "charity", "learning", "commute", "insurance", "medical", "fun"]
 
 
 @server.tool(name="get_categories", description="List available transaction categories")

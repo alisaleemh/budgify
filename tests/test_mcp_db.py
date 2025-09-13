@@ -14,10 +14,12 @@ def test_get_transactions(tmp_path):
     ]
     append_transactions(txs, str(db_path))
 
-    all_rows = anyio.run(get_transactions, str(db_path))
-    assert len(all_rows) == 2
-    assert all_rows[0]["description"] == "Coffee"
+    all_rows = anyio.run(lambda: get_transactions(str(db_path)))
+    assert len(all_rows["transactions"]) == 2
+    assert all_rows["transactions"][0]["description"] == "Coffee"
 
-    filtered = anyio.run(get_transactions, str(db_path), "2025-05-02")
-    assert len(filtered) == 1
-    assert filtered[0]["merchant"] == "Store"
+    filtered = anyio.run(
+        lambda: get_transactions(str(db_path), start_date="2025-05-02")
+    )
+    assert len(filtered["transactions"]) == 1
+    assert filtered["transactions"][0]["merchant"] == "Store"

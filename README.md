@@ -127,6 +127,8 @@ pip install dist/budgify-<version>-py3-none-any.whl
 budgify --dir ~/Downloads/statements --output csv
 # You can optionally specify a different YAML of manual transactions
 # budgify --dir ~/Downloads/statements --manual-file my_manual.yaml --output csv
+# Save transactions to SQLite as well
+# budgify --dir ~/Downloads/statements --output csv --db mydata.db
 ```
 
 Results:  `data/Budget2025.csv` (for year 2025), deduped and sorted by date.
@@ -135,6 +137,8 @@ Results:  `data/Budget2025.csv` (for year 2025), deduped and sorted by date.
 
 ```bash
 budgify --dir ~/Downloads/statements --output excel
+# or combine with a database:
+# budgify --dir ~/Downloads/statements --output excel --db mydata.db
 ```
 
 Generates a local `Budget2025.xlsx` workbook with monthly tabs (sorted from

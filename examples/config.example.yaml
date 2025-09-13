@@ -21,6 +21,7 @@ categories:
   # etc.
 
 data_dir: "./data"
+db_path: "budgify.db"
 
 google:
   service_account_file: "/path/to/service-account.json"

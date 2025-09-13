@@ -1,4 +1,5 @@
 import sqlite3
+import re
 from pathlib import Path
 from datetime import date
 from typing import Iterable, List
@@ -78,6 +79,8 @@ def fetch_transactions(
     db_path: str,
     start_date: date | None = None,
     end_date: date | None = None,
+    category: str | None = None,
+    merchant_regex: str | None = None,
 ) -> List[Transaction]:
     """Retrieve transactions from a SQLite database.
 
@@ -89,6 +92,10 @@ def fetch_transactions(
         Optional start date to filter transactions (inclusive).
     end_date:
         Optional end date to filter transactions (inclusive).
+    category:
+        Optional category name to filter transactions.
+    merchant_regex:
+        Optional regular expression to match merchant names.
     """
     conn = sqlite3.connect(db_path)
     try:
@@ -103,11 +110,14 @@ def fetch_transactions(
         if end_date:
             conditions.append("date <= ?")
             params.append(end_date.isoformat())
+        if category:
+            conditions.append("category = ?")
+            params.append(category)
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY date"
         rows = conn.execute(query, params).fetchall()
-        return [
+        txs = [
             Transaction(
                 date=date.fromisoformat(r[0]),
                 description=r[1],
@@ -117,5 +127,9 @@ def fetch_transactions(
             )
             for r in rows
         ]
+        if merchant_regex:
+            pattern = re.compile(merchant_regex, re.IGNORECASE)
+            txs = [t for t in txs if pattern.search(t.merchant)]
+        return txs
     finally:
         conn.close()

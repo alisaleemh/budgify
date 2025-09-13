@@ -206,6 +206,20 @@ budgify-mcp
 
 This starts a FastMCP server exposing a single `run_budgify` tool.
 
+### Go MCP Server
+
+A lightweight HTTP server written in Go also exposes the transactions
+database via an MCP-friendly endpoint. Run it with:
+
+```bash
+go run transaction_tracker/go_mcp_server/main.go
+```
+
+Set the `BUDGIFY_DB` environment variable to point at your SQLite
+database (defaults to `budget.db`). The server listens on `:8080` and
+provides `/get_spend_by_category_month`, returning monthly totals by
+category in JSON.
+
 ## Extending
 
 ### Add a new bank loader

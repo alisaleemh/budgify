@@ -3,7 +3,11 @@ from __future__ import annotations
 import anyio
 from mcp.server.fastmcp import FastMCP
 
+from dataclasses import asdict
+from datetime import date
+
 from transaction_tracker.cli import main as cli
+from transaction_tracker.database import fetch_transactions
 
 server = FastMCP(name="Budgify", instructions="Expose Budgify as an MCP tool")
 
@@ -30,6 +34,33 @@ async def run_budgify(
 
     await anyio.to_thread.run_sync(_run)
     return "Completed"
+
+
+@server.tool(
+    name="get_transactions", description="Fetch transactions from the SQLite database"
+)
+async def get_transactions(
+    db_path: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> list[dict]:
+    """Return a list of transactions from ``db_path``.
+
+    Parameters
+    ----------
+    db_path:
+        Path to the SQLite database file.
+    start_date, end_date:
+        Optional ISO formatted date strings bounding the query.
+    """
+
+    def _run() -> list[dict]:
+        start = date.fromisoformat(start_date) if start_date else None
+        end = date.fromisoformat(end_date) if end_date else None
+        txs = fetch_transactions(db_path, start, end)
+        return [asdict(t) for t in txs]
+
+    return await anyio.to_thread.run_sync(_run)
 
 
 def main() -> None:

@@ -204,7 +204,10 @@ invoke it directly. Install the optional `mcp` dependency and run:
 budgify-mcp
 ```
 
-This starts a FastMCP server exposing a single `run_budgify` tool.
+This starts a FastMCP server exposing:
+
+- `run_budgify` – process statements using the Budgify CLI.
+- `get_transactions` – fetch transactions from a SQLite database.
 
 ## Extending
 

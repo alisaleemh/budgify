@@ -3,10 +3,10 @@ from datetime import date
 
 from transaction_tracker.core.models import Transaction
 from transaction_tracker.database import append_transactions
-from transaction_tracker.mcp_server import get_transactions
+from transaction_tracker.mcp_server import summarize_spend_by_category
 
 
-def test_get_transactions(tmp_path):
+def test_summarize_spend_by_category_respects_dates(tmp_path):
     db_path = tmp_path / "txs.db"
     txs = [
         Transaction(date(2025, 5, 1), "Coffee", "Cafe", 3.5),
@@ -14,12 +14,28 @@ def test_get_transactions(tmp_path):
     ]
     append_transactions(txs, str(db_path))
 
-    all_rows = anyio.run(lambda: get_transactions(str(db_path)))
-    assert len(all_rows["transactions"]) == 2
-    assert all_rows["transactions"][0]["description"] == "Coffee"
+    async def run_all():
+        return await summarize_spend_by_category(str(db_path))
 
-    filtered = anyio.run(
-        lambda: get_transactions(str(db_path), start_date="2025-05-02")
-    )
-    assert len(filtered["transactions"]) == 1
-    assert filtered["transactions"][0]["merchant"] == "Store"
+    all_rows = anyio.run(run_all)
+    assert all_rows == [
+        {
+            "category": "misc",
+            "total": 15.5,
+            "transactions": 2,
+        }
+    ]
+
+    async def run_filtered():
+        return await summarize_spend_by_category(
+            str(db_path), start_date="2025-05-02"
+        )
+
+    filtered = anyio.run(run_filtered)
+    assert filtered == [
+        {
+            "category": "misc",
+            "total": 12.0,
+            "transactions": 1,
+        }
+    ]

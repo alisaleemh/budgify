@@ -3,7 +3,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 from datetime import date
-from typing import Dict, Iterable, List, Literal
+from typing import Dict, Iterable, List, Literal, Tuple
 
 from transaction_tracker.core.models import Transaction
 from transaction_tracker.core.categorizer import categorize
@@ -154,6 +154,77 @@ def _build_filters(
         params.append(category)
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     return where, params
+
+
+def _summarize_range(
+    conn: sqlite3.Connection,
+    start_date: date | None,
+    end_date: date | None,
+    category: str | None,
+) -> Tuple[float, int]:
+    """Return the total spend and transaction count for a date range."""
+
+    where, params = _build_filters(start_date, end_date, category)
+    row = conn.execute(
+        f"""
+        SELECT COALESCE(SUM(amount), 0.0) AS total,
+               COUNT(*) AS count
+        FROM transactions
+        {where}
+        """,
+        params,
+    ).fetchone()
+    total = float(row[0] or 0.0)
+    count = int(row[1] or 0)
+    return total, count
+
+
+def compare_spend_between_periods(
+    db_path: str,
+    first_start: date | None,
+    first_end: date | None,
+    second_start: date | None,
+    second_end: date | None,
+    category: str | None = None,
+) -> Dict[str, object]:
+    """Compare total spend between two date ranges.
+
+    The function returns totals for each range, the absolute difference between
+    them (second minus first) and a percent change when the first total is not
+    zero. When *category* is omitted all transactions are considered.
+    """
+
+    conn = sqlite3.connect(db_path)
+    try:
+        first_total, first_count = _summarize_range(
+            conn, first_start, first_end, category
+        )
+        second_total, second_count = _summarize_range(
+            conn, second_start, second_end, category
+        )
+
+        diff = second_total - first_total
+        pct_change = diff / first_total if first_total else None
+
+        return {
+            "category": category,
+            "first_period": {
+                "start": first_start.isoformat() if first_start else None,
+                "end": first_end.isoformat() if first_end else None,
+                "total": first_total,
+                "transactions": first_count,
+            },
+            "second_period": {
+                "start": second_start.isoformat() if second_start else None,
+                "end": second_end.isoformat() if second_end else None,
+                "total": second_total,
+                "transactions": second_count,
+            },
+            "difference": diff,
+            "percent_change": pct_change,
+        }
+    finally:
+        conn.close()
 
 
 def summarize_by_category(

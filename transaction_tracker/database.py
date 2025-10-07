@@ -298,3 +298,177 @@ def list_unique_merchants(db_path: str) -> List[Dict[str, object]]:
         }
         for merchant, categories in categories_by_merchant.items()
     ]
+
+
+def category_insights(
+    db_path: str,
+    category: str,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    *,
+    top_merchants: int = 5,
+    top_transactions: int = 5,
+    max_periods: int = 12,
+    max_opportunities: int = 3,
+) -> Dict[str, object]:
+    """Return a compact analysis for a specific spending category.
+
+    The result focuses on aggregate metrics, merchant concentration, simple
+    monthly trends and a minimal set of notable transactions so the response
+    remains small enough for LLM consumption.
+    """
+
+    if not category:
+        raise ValueError("category must be provided for category_insights")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        where, params = _build_filters(start_date, end_date, category)
+        params_list = list(params)
+
+        total_row = conn.execute(
+            f"""
+            SELECT COALESCE(SUM(amount), 0.0) AS total,
+                   COUNT(*) AS count,
+                   COALESCE(AVG(amount), 0.0) AS average
+            FROM transactions
+            {where}
+            """,
+            params_list,
+        ).fetchone()
+
+        total = float(total_row[0] or 0.0)
+        count = int(total_row[1] or 0)
+        average = float(total_row[2] or 0.0) if count else 0.0
+
+        merchant_rows = conn.execute(
+            f"""
+            SELECT merchant,
+                   SUM(amount) AS total,
+                   COUNT(*) AS count
+            FROM transactions
+            {where}
+            GROUP BY merchant
+            ORDER BY total DESC
+            LIMIT ?
+            """,
+            params_list + [top_merchants],
+        ).fetchall()
+
+        merchants = [
+            {
+                "merchant": row[0],
+                "total": float(row[1] or 0.0),
+                "transactions": int(row[2] or 0),
+                "spend_share": (float(row[1] or 0.0) / total) if total else 0.0,
+            }
+            for row in merchant_rows
+        ]
+
+        month_rows = conn.execute(
+            f"""
+            SELECT {_PERIOD_EXPRESSIONS['month']} AS period,
+                   SUM(amount) AS total,
+                   COUNT(*) AS count
+            FROM transactions
+            {where}
+            GROUP BY period
+            ORDER BY period
+            """,
+            params_list,
+        ).fetchall()
+
+        monthly_trends = [
+            {
+                "period": row[0],
+                "total": float(row[1] or 0.0),
+                "transactions": int(row[2] or 0),
+            }
+            for row in month_rows
+        ]
+        if max_periods > 0:
+            monthly_trends = monthly_trends[-max_periods:]
+
+        transaction_rows = conn.execute(
+            f"""
+            SELECT date, merchant, amount
+            FROM transactions
+            {where}
+            ORDER BY amount DESC
+            LIMIT ?
+            """,
+            params_list + [top_transactions],
+        ).fetchall()
+
+        top_tx = [
+            {
+                "date": row[0],
+                "merchant": row[1],
+                "amount": float(row[2] or 0.0),
+            }
+            for row in transaction_rows
+        ]
+
+        opportunities: List[Dict[str, object]] = []
+        if total > 0 and merchants:
+            dominant = merchants[0]
+            if dominant["spend_share"] >= 0.3:
+                opportunities.append(
+                    {
+                        "type": "merchant_concentration",
+                        "merchant": dominant["merchant"],
+                        "spend_share": round(dominant["spend_share"], 4),
+                        "message": (
+                            f"{dominant['merchant']} accounts for "
+                            f"{dominant['spend_share'] * 100:.1f}% of {category} "
+                            "spend. Review recurring charges or alternative providers."
+                        ),
+                    }
+                )
+
+            high_freq = max(merchants, key=lambda item: item["transactions"])
+            if high_freq["transactions"] >= 3 and high_freq["transactions"] >= max(1, int(count * 0.4)):
+                opportunities.append(
+                    {
+                        "type": "high_frequency_merchant",
+                        "merchant": high_freq["merchant"],
+                        "transactions": high_freq["transactions"],
+                        "message": (
+                            f"{high_freq['merchant']} appears {high_freq['transactions']} times. "
+                            "Consider batching purchases or checking for unnecessary repeats."
+                        ),
+                    }
+                )
+
+        if len(monthly_trends) > 1 and total > 0:
+            recent = monthly_trends[-1]
+            avg_monthly = total / len(monthly_trends)
+            if avg_monthly and recent["total"] > avg_monthly * 1.2:
+                opportunities.append(
+                    {
+                        "type": "recent_spike",
+                        "period": recent["period"],
+                        "total": recent["total"],
+                        "average": round(avg_monthly, 2),
+                        "message": (
+                            f"Spending in {recent['period']} ({recent['total']:.2f}) "
+                            f"exceeds the {avg_monthly:.2f} monthly average. Investigate recent changes."
+                        ),
+                    }
+                )
+
+        if max_opportunities > 0:
+            opportunities = opportunities[:max_opportunities]
+
+        return {
+            "category": category,
+            "total": total,
+            "transactions": count,
+            "average_transaction": average,
+            "merchants": merchants,
+            "monthly_trends": monthly_trends,
+            "top_transactions": top_tx,
+            "optimization_opportunities": opportunities,
+        }
+    finally:
+        conn.close()

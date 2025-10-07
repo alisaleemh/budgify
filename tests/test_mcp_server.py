@@ -4,6 +4,7 @@ from datetime import date
 from transaction_tracker.core.models import Transaction
 from transaction_tracker.database import append_transactions
 from transaction_tracker.mcp_server import (
+    analyze_category_spend,
     get_categories,
     list_unique_merchants_tool,
     summarize_spend_by_category,
@@ -99,3 +100,43 @@ def test_list_unique_merchants(tmp_path):
         "merchant": "Restaurant Y",
         "categories": ["restaurants"],
     }
+
+
+def test_analyze_category_spend(tmp_path):
+    db_path = _setup_db(tmp_path)
+
+    async def run():
+        return await analyze_category_spend(
+            str(db_path),
+            category="groceries",
+            top_merchants=3,
+            top_transactions=2,
+        )
+
+    result = anyio.run(run)
+    assert result["category"] == "groceries"
+    assert result["total"] == 40.0
+    assert result["transactions"] == 2
+    assert result["average_transaction"] == 20.0
+
+    merchants = result["merchants"]
+    assert [m["merchant"] for m in merchants] == ["Grocery B", "Grocery A"]
+    assert merchants[0]["total"] == 30.0
+    assert merchants[0]["spend_share"] == 0.75
+
+    assert result["monthly_trends"] == [
+        {"period": "2025-01", "total": 10.0, "transactions": 1},
+        {"period": "2025-02", "total": 30.0, "transactions": 1},
+    ]
+
+    top_tx = result["top_transactions"]
+    assert len(top_tx) == 2
+    assert top_tx[0] == {
+        "date": "2025-02-05",
+        "merchant": "Grocery B",
+        "amount": 30.0,
+    }
+
+    opp_types = {item["type"] for item in result["optimization_opportunities"]}
+    assert "merchant_concentration" in opp_types
+    assert "recent_spike" in opp_types

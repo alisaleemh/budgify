@@ -7,6 +7,7 @@ from typing import Literal
 from mcp.server.fastmcp import FastMCP
 
 from transaction_tracker.database import (
+    category_insights,
     list_unique_merchants,
     summarize_by_category,
     summarize_by_merchant,
@@ -110,6 +111,31 @@ async def summarize_spend_by_merchant(
 async def list_unique_merchants_tool(db_path: str) -> list[dict]:
     def _run() -> list[dict]:
         return list_unique_merchants(db_path)
+
+    return await anyio.to_thread.run_sync(_run)
+
+
+@server.tool(
+    name="analyze_category_spend",
+    description="Detailed analysis for a category including merchant and trend insights",
+)
+async def analyze_category_spend(
+    db_path: str,
+    category: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    top_merchants: int = 5,
+    top_transactions: int = 5,
+) -> dict:
+    def _run() -> dict:
+        return category_insights(
+            db_path,
+            category=category,
+            start_date=_parse_date(start_date),
+            end_date=_parse_date(end_date),
+            top_merchants=top_merchants,
+            top_transactions=top_transactions,
+        )
 
     return await anyio.to_thread.run_sync(_run)
 

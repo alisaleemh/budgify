@@ -6,6 +6,8 @@ from mcp.server.fastmcp import FastMCP
 from dataclasses import asdict
 from datetime import date
 
+from pathlib import Path
+
 from transaction_tracker.database import fetch_transactions
 
 server = FastMCP(name="Budgify", instructions="Expose Budgify as an MCP tool")
@@ -28,9 +30,23 @@ async def get_transactions(
         Optional ISO formatted date strings bounding the query.
     """
 
-    def _run() -> list[dict]:
+    try:
         start = date.fromisoformat(start_date) if start_date else None
+    except ValueError as exc:
+        raise ValueError(f"Invalid start_date: {start_date}") from exc
+
+    try:
         end = date.fromisoformat(end_date) if end_date else None
+    except ValueError as exc:
+        raise ValueError(f"Invalid end_date: {end_date}") from exc
+
+    if start and end and start > end:
+        raise ValueError("start_date must be on or before end_date")
+
+    if not Path(db_path).exists():
+        raise FileNotFoundError(f"Database not found: {db_path}")
+
+    def _run() -> list[dict]:
         txs = fetch_transactions(db_path, start, end)
         return [asdict(t) for t in txs]
 

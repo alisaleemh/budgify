@@ -1,15 +1,38 @@
 from __future__ import annotations
 
 import anyio
-from dataclasses import asdict
 from datetime import date
+from typing import Literal
+
 from mcp.server.fastmcp import FastMCP
 
-from transaction_tracker.database import fetch_transactions
+from transaction_tracker.database import (
+    list_unique_merchants,
+    summarize_by_category,
+    summarize_by_merchant,
+    summarize_by_period,
+)
 
 server = FastMCP(name="Budgify", instructions="Expose Budgify as an MCP tool")
 
-CATEGORIES = ["subscription", "car", "misc", "restaurants", "groceries", "communications", "charity", "learning", "commute", "insurance", "medical", "fun"]
+CATEGORIES = [
+    "subscription",
+    "car",
+    "misc",
+    "restaurants",
+    "groceries",
+    "communications",
+    "charity",
+    "learning",
+    "commute",
+    "insurance",
+    "medical",
+    "fun",
+]
+
+
+def _parse_date(value: str | None) -> date | None:
+    return date.fromisoformat(value) if value else None
 
 
 @server.tool(name="get_categories", description="List available transaction categories")
@@ -17,64 +40,76 @@ async def get_categories() -> list[str]:
     return CATEGORIES
 
 
-@server.tool(name="get_transactions", description="Fetch transactions from the SQLite database")
-async def get_transactions(
+@server.tool(
+    name="summarize_spend_by_category",
+    description="Total spending grouped by category",
+)
+async def summarize_spend_by_category(
     db_path: str,
     start_date: str | None = None,
     end_date: str | None = None,
-    category: str | None = None,
-    merchant_regex: str | None = None,
-    include_transactions: bool = True,
-) -> dict:
-    """Return transactions and total amount from ``db_path``.
-
-    Parameters
-    ----------
-    db_path:
-        Path to the SQLite database file.
-    start_date, end_date:
-        Optional ISO formatted date strings bounding the query.
-    category:
-        Optional category name to filter transactions.
-    merchant_regex:
-        Optional regular expression to match merchant names.
-    include_transactions:
-        When ``False`` only the total is returned.
-    """
-
-    def _run() -> dict:
-        start = date.fromisoformat(start_date) if start_date else None
-        end = date.fromisoformat(end_date) if end_date else None
-        txs = fetch_transactions(
+) -> list[dict]:
+    def _run() -> list[dict]:
+        return summarize_by_category(
             db_path,
-            start,
-            end,
-            category=category,
-            merchant_regex=merchant_regex,
+            start_date=_parse_date(start_date),
+            end_date=_parse_date(end_date),
         )
-        total = sum(t.amount for t in txs)
-        if include_transactions:
-            data = [asdict(t) for t in txs]
-            return {"transactions": data, "total": total}
-        return {"total": total}
 
     return await anyio.to_thread.run_sync(_run)
 
 
 @server.tool(
-    name="get_transactions_by_category_month",
-    description="Fetch transactions for a category grouped by month",
+    name="summarize_spend_by_period",
+    description="Total spending grouped by month, quarter, or year",
 )
-async def get_transactions_by_category_month(db_path: str, category: str) -> dict[str, float]:
-    """Return monthly totals for ``category`` keyed by ``YYYY-MM``."""
+async def summarize_spend_by_period(
+    db_path: str,
+    period: Literal["month", "quarter", "year"],
+    start_date: str | None = None,
+    end_date: str | None = None,
+    category: str | None = None,
+) -> list[dict]:
+    def _run() -> list[dict]:
+        return summarize_by_period(
+            db_path,
+            period=period,
+            start_date=_parse_date(start_date),
+            end_date=_parse_date(end_date),
+            category=category,
+        )
 
-    def _run() -> dict[str, float]:
-        txs = fetch_transactions(db_path, category=category)
-        result: dict[str, float] = {}
-        for t in txs:
-            key = t.date.strftime("%Y-%m")
-            result[key] = result.get(key, 0.0) + t.amount
-        return result
+    return await anyio.to_thread.run_sync(_run)
+
+
+@server.tool(
+    name="summarize_spend_by_merchant",
+    description="Total spending grouped by merchant",
+)
+async def summarize_spend_by_merchant(
+    db_path: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    category: str | None = None,
+) -> list[dict]:
+    def _run() -> list[dict]:
+        return summarize_by_merchant(
+            db_path,
+            start_date=_parse_date(start_date),
+            end_date=_parse_date(end_date),
+            category=category,
+        )
+
+    return await anyio.to_thread.run_sync(_run)
+
+
+@server.tool(
+    name="list_unique_merchants",
+    description="List merchants and the categories they appear in",
+)
+async def list_unique_merchants_tool(db_path: str) -> list[dict]:
+    def _run() -> list[dict]:
+        return list_unique_merchants(db_path)
 
     return await anyio.to_thread.run_sync(_run)
 

@@ -206,7 +206,11 @@ budgify-mcp
 
 This starts a FastMCP server exposing:
 
-- `get_transactions` – fetch transactions from a SQLite database.
+- `get_categories` – list the canonical Budgify categories.
+- `summarize_spend_by_category` – total spending grouped by category.
+- `summarize_spend_by_period` – totals grouped by month, quarter, or year.
+- `summarize_spend_by_merchant` – totals grouped by merchant.
+- `list_unique_merchants` – merchants encountered with their categories.
 
 ## Extending
 

@@ -1,27 +1,29 @@
-from unittest.mock import MagicMock
-
 from transaction_tracker.outputs.sheets_output import SheetsOutput
 
 
-def test_apply_table_and_sort_monthly():
-    ws = MagicMock()
+def test_table_and_sort_requests_monthly():
     rows = [
         ['date', 'description', 'merchant', 'category', 'amount'],
         ['2024-01-01', 'Desc', 'Merc', 'Cat', 10.0],
     ]
     out = object.__new__(SheetsOutput)
-    out._apply_table_and_sort(ws, rows, amount_col=5)
-    ws.set_basic_filter.assert_called_once_with('A1:E2')
-    ws.sort.assert_called_once_with((5, 'des'), range='A2:E2')
+    reqs = out._table_and_sort_requests(sheet_id=1, row_count=len(rows), column_count=len(rows[0]), amount_col_index=4)
+    assert reqs[0]['setBasicFilter']['filter']['range'] == {
+        'sheetId': 1,
+        'startRowIndex': 0,
+        'endRowIndex': len(rows),
+        'startColumnIndex': 0,
+        'endColumnIndex': len(rows[0])
+    }
+    assert reqs[1]['sortRange']['sortSpecs'][0]['dimensionIndex'] == 4
 
 
-def test_apply_table_and_sort_alldata():
-    ws = MagicMock()
+def test_table_and_sort_requests_alldata():
     rows = [
         ['month', 'date', 'description', 'merchant', 'category', 'amount'],
         ['Jan', '2024-01-01', 'Desc', 'Merc', 'Cat', 20.0],
     ]
     out = object.__new__(SheetsOutput)
-    out._apply_table_and_sort(ws, rows, amount_col=6)
-    ws.set_basic_filter.assert_called_once_with('A1:F2')
-    ws.sort.assert_called_once_with((6, 'des'), range='A2:F2')
+    reqs = out._table_and_sort_requests(sheet_id=2, row_count=len(rows), column_count=len(rows[0]), amount_col_index=5)
+    assert reqs[0]['setBasicFilter']['filter']['range']['endColumnIndex'] == len(rows[0])
+    assert reqs[1]['sortRange']['range']['sheetId'] == 2

@@ -21,6 +21,7 @@ class SheetsOutput(BaseOutput):
     MONTH_FMT = "%B %Y"
     ALL_DATA  = "AllData"
     SUMMARY   = "Summary"
+    CHARTS    = "Charts"
 
     def __init__(self, config):
         google_cfg  = config.get('google', {})
@@ -115,6 +116,7 @@ class SheetsOutput(BaseOutput):
         # Ensure aggregate tabs exist before fetching metadata
         self._get_tab(sh, self.ALL_DATA, created, cols='6')
         self._get_tab(sh, self.SUMMARY, created, cols='10')
+        self._get_tab(sh, self.CHARTS, created, cols='10')
 
         # 2) AllData tab: combine & dedupe
         monthly_data = {}
@@ -182,6 +184,7 @@ class SheetsOutput(BaseOutput):
 
         # 3) Summary tab: single pivot grouping month & category
         clear_ranges.append(f"'{self.SUMMARY}'!A:Z")
+        clear_ranges.append(f"'{self.CHARTS}'!A:Z")
         summary_sheet_id = id_map[self.SUMMARY]
         batch_requests.append(
             self._summary_pivot_request(
@@ -194,17 +197,22 @@ class SheetsOutput(BaseOutput):
             self._formatting_requests(summary_sheet_id, 10, amount_col_index=4, tab_rgb=(0.7,0.7,0.7))
         )
 
-        # 4) Summary charts
+        # 4) Charts tab with aggregated pivots + visuals
+        chart_sheet_id = id_map[self.CHARTS]
+        months_in_data = sorted({row[0] for row in all_rows[1:]})
+        categories_in_data = sorted({row[4] for row in all_rows[1:]})
         batch_requests.extend(
-            self._summary_charts_requests(
-                summary_sheet_id,
+            self._charts_tab_requests(
+                chart_sheet_id,
                 all_sheet_id,
+                months_in_data,
+                categories_in_data,
                 len(all_rows)
             )
         )
 
         # 5) Reorder tabs
-        ordered = [self.SUMMARY, self.ALL_DATA]
+        ordered = [self.SUMMARY, self.CHARTS, self.ALL_DATA]
         for m in range(1,13):
             t = f"{month_name[m]} {year}"
             if t in id_map:
@@ -422,62 +430,122 @@ class SheetsOutput(BaseOutput):
 
         return [header_fmt, amount_fmt, freeze_req]
 
-    def _summary_charts_requests(self, summary_sheet_id, all_sheet_id, all_row_count):
+    def _chart_pivot_request(self, chart_sheet_id, all_sheet_id, source_row_count, start_row, start_col, row_source_offset, filter_value=None, sort_desc_by_amount=False):
+        pivot = {
+            'source': {
+                'sheetId': all_sheet_id,
+                'startRowIndex': 0,
+                'endRowIndex': source_row_count,
+                'startColumnIndex': 0,
+                'endColumnIndex': 6
+            },
+            'rows': [{
+                'sourceColumnOffset': row_source_offset,
+                'showTotals': False,
+                'sortOrder': 'ASCENDING'
+            }],
+            'values': [{
+                'summarizeFunction': 'SUM',
+                'sourceColumnOffset': 5
+            }]
+        }
+
+        if filter_value:
+            pivot['filters'] = [{
+                'sourceColumnOffset': 4,
+                'filterCriteria': {
+                    'condition': {
+                        'type': 'TEXT_EQ',
+                        'values': [{'userEnteredValue': filter_value}]
+                    }
+                }
+            }]
+
+        if sort_desc_by_amount:
+            pivot['rows'][0]['sortOrder'] = 'DESCENDING'
+            pivot['rows'][0]['valueBucket'] = {
+                'values': [{
+                    'summarizeFunction': 'SUM',
+                    'sourceColumnOffset': 5
+                }]
+            }
+
+        return {
+            'updateCells': {
+                'rows': [{
+                    'values': [{
+                        'pivotTable': pivot
+                    }]
+                }],
+                'start': {
+                    'sheetId': chart_sheet_id,
+                    'rowIndex': start_row,
+                    'columnIndex': start_col
+                },
+                'fields': 'pivotTable'
+            }
+        }
+
+    def _charts_tab_requests(self, chart_sheet_id, all_sheet_id, months_in_data, categories_in_data, all_row_count):
         if all_row_count <= 1:
             return []
 
-        def source_range(start_col, end_col):
+        requests = []
+
+        months_row_count = max(len(months_in_data), 1) + 1
+        categories_row_count = max(len(categories_in_data), 1) + 1
+
+        monthly_start = 0
+        restaurant_start = monthly_start + months_row_count + 3
+        grocery_start = restaurant_start + months_row_count + 3
+        category_start = grocery_start + months_row_count + 3
+
+        requests.extend([
+            self._chart_pivot_request(chart_sheet_id, all_sheet_id, all_row_count, monthly_start, 0, row_source_offset=0),
+            self._chart_pivot_request(chart_sheet_id, all_sheet_id, all_row_count, restaurant_start, 0, row_source_offset=0, filter_value='restaurants'),
+            self._chart_pivot_request(chart_sheet_id, all_sheet_id, all_row_count, grocery_start, 0, row_source_offset=0, filter_value='groceries'),
+            self._chart_pivot_request(chart_sheet_id, all_sheet_id, all_row_count, category_start, 0, row_source_offset=4, sort_desc_by_amount=True)
+        ])
+
+        def pivot_range(start_row, row_count, start_col=0, col_count=2):
             return {
                 'sources': [{
-                    'sheetId': all_sheet_id,
-                    'startRowIndex': 0,
-                    'endRowIndex': all_row_count,
+                    'sheetId': chart_sheet_id,
+                    'startRowIndex': start_row,
+                    'endRowIndex': start_row + row_count,
                     'startColumnIndex': start_col,
-                    'endColumnIndex': end_col
+                    'endColumnIndex': start_col + col_count
                 }]
             }
 
-        def add_basic_chart(title, pos_row, pos_col, filter_value=None):
-            chart_spec = {
-                'title': title,
-                'basicChart': {
-                    'chartType': 'COLUMN',
-                    'legendPosition': 'BOTTOM_LEGEND',
-                    'headerCount': 1,
-                    'domains': [{
-                        'domain': {
-                            'sourceRange': source_range(0, 1)
-                        }
-                    }],
-                    'series': [{
-                        'series': {
-                            'sourceRange': source_range(5, 6)
-                        }
-                    }]
-                }
-            }
-
-            if filter_value:
-                chart_spec['filterSpecs'] = [{
-                    'filterCriteria': {
-                        'condition': {
-                            'type': 'TEXT_EQ',
-                            'values': [{'userEnteredValue': filter_value}]
-                        }
-                    },
-                    'columnIndex': 4
-                }]
-
+        def add_basic_chart(title, anchor_row, anchor_col, data_start_row, data_row_count):
             return {
                 'addChart': {
                     'chart': {
-                        'spec': chart_spec,
+                        'spec': {
+                            'title': title,
+                            'basicChart': {
+                                'chartType': 'COLUMN',
+                                'legendPosition': 'BOTTOM_LEGEND',
+                                'headerCount': 1,
+                                'domains': [{
+                                    'domain': {
+                                        'sourceRange': pivot_range(data_start_row, data_row_count, start_col=0, col_count=1)
+                                    }
+                                }],
+                                'series': [{
+                                    'series': {
+                                        'sourceRange': pivot_range(data_start_row, data_row_count, start_col=1, col_count=1)
+                                    }
+                                }]
+                            }
+                        },
                         'position': {
                             'overlayPosition': {
                                 'anchorCell': {
-                                    'sheetId': summary_sheet_id,
-                                    'rowIndex': pos_row,
-                                    'columnIndex': pos_col
+                                    'sheetId': chart_sheet_id,
+                                    'rowIndex': anchor_row,
+                                    'columnIndex': anchor_col
                                 },
                                 'offsetXPixels': 0,
                                 'offsetYPixels': 0,
@@ -489,13 +557,13 @@ class SheetsOutput(BaseOutput):
                 }
             }
 
-        requests = [
-            add_basic_chart('Monthly spending', 0, 0),
-            add_basic_chart('Restaurant spending by month', 16, 0, filter_value='restaurants'),
-            add_basic_chart('Grocery spending by month', 32, 0, filter_value='groceries'),
-        ]
+        requests.extend([
+            add_basic_chart('Monthly spending', 0, 6, monthly_start, months_row_count),
+            add_basic_chart('Restaurant spending by month', 18, 6, restaurant_start, months_row_count),
+            add_basic_chart('Grocery spending by month', 36, 6, grocery_start, months_row_count)
+        ])
 
-        pie_chart = {
+        requests.append({
             'addChart': {
                 'chart': {
                     'spec': {
@@ -503,19 +571,19 @@ class SheetsOutput(BaseOutput):
                         'pieChart': {
                             'legendPosition': 'RIGHT_LEGEND',
                             'domain': {
-                                'sourceRange': source_range(4, 5)
+                                'sourceRange': pivot_range(category_start, categories_row_count, start_col=0, col_count=1)
                             },
                             'series': {
-                                'sourceRange': source_range(5, 6)
+                                'sourceRange': pivot_range(category_start, categories_row_count, start_col=1, col_count=1)
                             }
                         }
                     },
                     'position': {
                         'overlayPosition': {
                             'anchorCell': {
-                                'sheetId': summary_sheet_id,
+                                'sheetId': chart_sheet_id,
                                 'rowIndex': 0,
-                                'columnIndex': 8
+                                'columnIndex': 14
                             },
                             'offsetXPixels': 0,
                             'offsetYPixels': 0,
@@ -525,7 +593,6 @@ class SheetsOutput(BaseOutput):
                     }
                 }
             }
-        }
-        requests.append(pie_chart)
+        })
 
         return requests

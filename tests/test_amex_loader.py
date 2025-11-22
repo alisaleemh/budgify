@@ -32,3 +32,33 @@ def test_amex_loader_skips_blank_amount_rows(monkeypatch):
 
     assert len(txs) == 1
     assert txs[0].amount == 12.34
+
+
+def test_amex_loader_falls_back_to_description_when_merchant_missing(monkeypatch):
+    header_probe = pd.DataFrame([
+        ['Date', 'Description', 'Amount', 'Merchant'],
+        ['2024-01-01', 'Charge', '12.34', 'Store'],
+    ])
+
+    data_df = pd.DataFrame({
+        'Date': ['2024-01-01'],
+        'Description': ['Coffee Shop'],
+        'Amount': ['5.67'],
+        'Merchant': [float('nan')],
+    })
+
+    call_state = {'count': 0}
+
+    def fake_read_excel(*args, **kwargs):
+        if call_state['count'] == 0:
+            call_state['count'] += 1
+            return header_probe
+        return data_df
+
+    monkeypatch.setattr(pd, 'read_excel', fake_read_excel)
+
+    loader = AmexLoader()
+    txs = list(loader.load('fake.xlsx'))
+
+    assert len(txs) == 1
+    assert txs[0].merchant == 'Coffee Shop'

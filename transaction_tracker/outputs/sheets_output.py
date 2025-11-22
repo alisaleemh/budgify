@@ -84,11 +84,15 @@ class SheetsOutput(BaseOutput):
             if self.owner not in emails:
                 sh.share(self.owner, perm_type='user', role='writer')
 
+        value_updates = []
+        clear_ranges = []
+        batch_requests = []
+        month_rows = {}
+
         # 1) Monthly tabs
         for month_str in months:
             dt = datetime.strptime(month_str, '%Y-%m')
             tab_title = dt.strftime(self.MONTH_FMT)
-            # filter transactions for this month
             txs = [tx for tx in transactions if tx.date.strftime('%Y-%m') == month_str]
             ws = self._get_tab(sh, tab_title, created)
             rows = [['date','description','merchant','category','amount']]
@@ -100,119 +104,168 @@ class SheetsOutput(BaseOutput):
                     categorize(tx, self.config['categories']) or '',
                     tx.amount
                 ])
-            ws.clear()
-            ws.update('A1', rows, value_input_option='USER_ENTERED')
-            self._apply_table_and_sort(ws, rows, amount_col=5)
-            self._ensure_pivot(ws, rows, ws.title)
-            self._apply_formatting(ws, tab_rgb=(0.6,0.8,1.0))
+            month_rows[tab_title] = rows
+            clear_ranges.append(f"'{tab_title}'!A:Z")
+            end_cell = rowcol_to_a1(len(rows), len(rows[0]))
+            value_updates.append({
+                'range': f"'{tab_title}'!A1:{end_cell}",
+                'values': rows
+            })
+
+        # Ensure aggregate tabs exist before fetching metadata
+        self._get_tab(sh, self.ALL_DATA, created, cols='6')
+        self._get_tab(sh, self.SUMMARY, created, cols='10')
 
         # 2) AllData tab: combine & dedupe
-        all_rows = [['month','date','description','merchant','category','amount']]
-        seen = set()
+        monthly_data = {}
+        for title, rows in month_rows.items():
+            monthly_data[title] = [r[:5] for r in rows[1:]]
+
         for ws in sh.worksheets():
             title = ws.title
-            if title in (self.ALL_DATA, self.SUMMARY):
+            if title in (self.ALL_DATA, self.SUMMARY) or title in monthly_data:
                 continue
-            # Only consider the first five columns (transaction data) to avoid
-            # picking up pivot-table output appended to the worksheet.
-            data = [row[:5] for row in ws.get_all_values()[1:]]
-            for r in data:
+            monthly_data[title] = [row[:5] for row in ws.get_all_values()[1:]]
+
+        all_rows = [['month','date','description','merchant','category','amount']]
+        seen = set()
+        for title, data_rows in monthly_data.items():
+            for r in data_rows:
                 key = (title,) + tuple(r)
                 if key not in seen:
                     seen.add(key)
-                    # Try parsing the amount column if it looks like a currency
-                    val = r[4]
+                    val = r[4] if len(r) > 4 else 0
                     try:
                         amount = float(
                             val if isinstance(val, (int, float))
-                            else val.replace("$", "").replace(",", "")
+                            else str(val).replace("$", "").replace(",", "")
                         )
                     except Exception:
                         amount = 0.0
                     all_rows.append([title] + r[:4] + [amount])
-        all_ws = self._get_tab(sh, self.ALL_DATA, created, cols='6')
-        all_ws.clear()
-        all_ws.update('A1', all_rows, value_input_option='USER_ENTERED')
-        self._apply_table_and_sort(all_ws, all_rows, amount_col=6)
-        self._apply_formatting(all_ws, tab_rgb=(0.9,0.9,0.9))
+
+        clear_ranges.append(f"'{self.ALL_DATA}'!A:Z")
+        end_cell = rowcol_to_a1(len(all_rows), len(all_rows[0]))
+        value_updates.append({
+            'range': f"'{self.ALL_DATA}'!A1:{end_cell}",
+            'values': all_rows
+        })
+
+        # Fetch metadata once for sheet ids
+        meta = self.sheets_srv.spreadsheets().get(
+            spreadsheetId=sh.id,
+            fields='sheets.properties'
+        ).execute()['sheets']
+        id_map = {s['properties']['title']: s['properties']['sheetId'] for s in meta}
+
+        # Build requests for monthly tabs
+        for title, rows in month_rows.items():
+            sheet_id = id_map[title]
+            batch_requests.extend(
+                self._table_and_sort_requests(sheet_id, len(rows), len(rows[0]), amount_col_index=4)
+            )
+            batch_requests.append(
+                self._month_pivot_request(sheet_id, len(rows))
+            )
+            batch_requests.extend(
+                self._formatting_requests(sheet_id, len(rows[0]), amount_col_index=4, tab_rgb=(0.6,0.8,1.0))
+            )
+
+        # Requests for AllData tab
+        all_sheet_id = id_map[self.ALL_DATA]
+        batch_requests.extend(
+            self._table_and_sort_requests(all_sheet_id, len(all_rows), len(all_rows[0]), amount_col_index=5)
+        )
+        batch_requests.extend(
+            self._formatting_requests(all_sheet_id, len(all_rows[0]), amount_col_index=5, tab_rgb=(0.9,0.9,0.9))
+        )
 
         # 3) Summary tab: single pivot grouping month & category
-        sum_ws = self._get_tab(sh, self.SUMMARY, created, cols='10')
-        sum_ws.clear()
-        meta = self.sheets_srv.spreadsheets().get(
-            spreadsheetId=sh.id,
-            fields='sheets.properties'
-        ).execute()['sheets']
-        id_map = {s['properties']['title']: s['properties']['sheetId'] for s in meta}
-        pivot_req = {
-            'updateCells': {
-                'rows': [{
-                    'values': [{
-                        'pivotTable': {
-                            'source': {
-                                'sheetId': id_map[self.ALL_DATA],
-                                'startRowIndex': 0,
-                                'endRowIndex': len(all_rows),
-                                'startColumnIndex': 0,
-                                'endColumnIndex': 6
-                            },
-                            'rows': [
-                                {'sourceColumnOffset': 0, 'showTotals': True, 'sortOrder': 'ASCENDING'},
-                                {'sourceColumnOffset': 4, 'showTotals': True, 'sortOrder': 'ASCENDING'}
-                            ],
-                            'values': [{
-                                'summarizeFunction': 'SUM',
-                                'sourceColumnOffset': 5
-                            }]
-                        }
-                    }]
-                }],
-                'start': {'sheetId': id_map[self.SUMMARY], 'rowIndex': 0, 'columnIndex': 0},
-                'fields': 'pivotTable'
-            }
-        }
-        self.sheets_srv.spreadsheets().batchUpdate(
-            spreadsheetId=sh.id,
-            body={'requests': [pivot_req]}
-        ).execute()
-        self._apply_formatting(sum_ws, tab_rgb=(0.7,0.7,0.7))
+        clear_ranges.append(f"'{self.SUMMARY}'!A:Z")
+        summary_sheet_id = id_map[self.SUMMARY]
+        batch_requests.append(
+            self._summary_pivot_request(
+                summary_sheet_id,
+                all_sheet_id,
+                len(all_rows)
+            )
+        )
+        batch_requests.extend(
+            self._formatting_requests(summary_sheet_id, 10, amount_col_index=4, tab_rgb=(0.7,0.7,0.7))
+        )
 
         # 4) Reorder tabs
-        meta = self.sheets_srv.spreadsheets().get(
-            spreadsheetId=sh.id,
-            fields='sheets.properties'
-        ).execute()['sheets']
-        id_map = {s['properties']['title']: s['properties']['sheetId'] for s in meta}
         ordered = [self.SUMMARY, self.ALL_DATA]
         for m in range(1,13):
             t = f"{month_name[m]} {year}"
             if t in id_map:
                 ordered.append(t)
-        reqs = []
         for idx, title in enumerate(ordered):
             sid = id_map[title]
-            reqs.append({
+            batch_requests.append({
                 'updateSheetProperties': {
                     'properties': {'sheetId': sid, 'index': idx},
                     'fields': 'index'
                 }
             })
-        if reqs:
+
+        # Execute batched operations to minimise API calls
+        if clear_ranges:
+            self.sheets_srv.spreadsheets().values().batchClear(
+                spreadsheetId=sh.id,
+                body={'ranges': clear_ranges}
+            ).execute()
+
+        if value_updates:
+            self.sheets_srv.spreadsheets().values().batchUpdate(
+                spreadsheetId=sh.id,
+                body={
+                    'valueInputOption': 'USER_ENTERED',
+                    'data': value_updates
+                }
+            ).execute()
+
+        if batch_requests:
             self.sheets_srv.spreadsheets().batchUpdate(
                 spreadsheetId=sh.id,
-                body={'requests': reqs}
+                body={'requests': batch_requests}
             ).execute()
 
         print(f"Built tabs for {len(months)} months, AllData, Summary, and reordered tabs in '{ss_title}'.")
 
-    def _apply_table_and_sort(self, ws, rows, amount_col):
-        """Format worksheet range as a filterable table and sort by amount."""
-        if not rows:
-            return
-        end_row = len(rows)
-        end_cell = rowcol_to_a1(end_row, amount_col)
-        ws.set_basic_filter(f"A1:{end_cell}")
-        ws.sort((amount_col, 'des'), range=f"A2:{end_cell}")
+    def _table_and_sort_requests(self, sheet_id, row_count, column_count, amount_col_index):
+        if row_count <= 1 or column_count == 0:
+            return []
+        return [
+            {
+                'setBasicFilter': {
+                    'filter': {
+                        'range': {
+                            'sheetId': sheet_id,
+                            'startRowIndex': 0,
+                            'endRowIndex': row_count,
+                            'startColumnIndex': 0,
+                            'endColumnIndex': column_count
+                        }
+                    }
+                }
+            },
+            {
+                'sortRange': {
+                    'range': {
+                        'sheetId': sheet_id,
+                        'startRowIndex': 1,
+                        'endRowIndex': row_count,
+                        'startColumnIndex': 0,
+                        'endColumnIndex': column_count
+                    },
+                    'sortSpecs': [{
+                        'dimensionIndex': amount_col_index,
+                        'sortOrder': 'DESCENDING'
+                    }]
+                }
+            }
+        ]
 
     def _get_tab(self, sh, title, created_ss, rows='100', cols='10'):
         try:
@@ -224,17 +277,8 @@ class SheetsOutput(BaseOutput):
                 return ws
             return sh.add_worksheet(title=title, rows=rows, cols=cols)
 
-    def _ensure_pivot(self, ws, rows, title):
-        ss       = ws.spreadsheet.id
-        meta     = self.sheets_srv.spreadsheets().get(
-            spreadsheetId=ss,
-            fields='sheets.properties'
-        ).execute()['sheets']
-        sheet_id = next(
-            s['properties']['sheetId']
-            for s in meta if s['properties']['title']==title
-        )
-        pivot_req = {
+    def _month_pivot_request(self, sheet_id, row_count):
+        return {
             'updateCells': {
                 'rows': [{
                     'values': [{
@@ -242,7 +286,7 @@ class SheetsOutput(BaseOutput):
                             'source': {
                                 'sheetId': sheet_id,
                                 'startRowIndex': 0,
-                                'endRowIndex': len(rows),
+                                'endRowIndex': row_count,
                                 'startColumnIndex': 0,
                                 'endColumnIndex': 5
                             },
@@ -258,33 +302,65 @@ class SheetsOutput(BaseOutput):
                         }
                     }]
                 }],
-                'start': {'sheetId': sheet_id, 'rowIndex': 0, 'columnIndex': 6},
+                'start': {
+                    'sheetId': sheet_id,
+                    'rowIndex': 0,
+                    'columnIndex': 6
+                },
                 'fields': 'pivotTable'
             }
         }
-        self.sheets_srv.spreadsheets().batchUpdate(
-            spreadsheetId=ss,
-            body={'requests':[pivot_req]}
-        ).execute()
 
-    def _apply_formatting(self, ws, tab_rgb=(0.8,0.9,1.0)):
-        """Apply basic formatting to the worksheet for better readability."""
-        ss       = ws.spreadsheet.id
-        meta     = self.sheets_srv.spreadsheets().get(
-            spreadsheetId=ss,
-            fields='sheets.properties'
-        ).execute()['sheets']
-        sheet_id = next(
-            s['properties']['sheetId']
-            for s in meta if s['properties']['title'] == ws.title
-        )
+    def _summary_pivot_request(self, summary_sheet_id, all_sheet_id, all_row_count):
+        return {
+            'updateCells': {
+                'rows': [{
+                    'values': [{
+                        'pivotTable': {
+                            'source': {
+                                'sheetId': all_sheet_id,
+                                'startRowIndex': 0,
+                                'endRowIndex': all_row_count,
+                                'startColumnIndex': 0,
+                                'endColumnIndex': 6
+                            },
+                            'rows': [
+                                {
+                                    'sourceColumnOffset': 0,
+                                    'showTotals': True,
+                                    'sortOrder': 'ASCENDING'
+                                },
+                                {
+                                    'sourceColumnOffset': 4,
+                                    'showTotals': True,
+                                    'sortOrder': 'ASCENDING'
+                                }
+                            ],
+                            'values': [{
+                                'summarizeFunction': 'SUM',
+                                'sourceColumnOffset': 5
+                            }]
+                        }
+                    }]
+                }],
+                'start': {
+                    'sheetId': summary_sheet_id,
+                    'rowIndex': 0,
+                    'columnIndex': 0
+                },
+                'fields': 'pivotTable'
+            }
+        }
 
+    def _formatting_requests(self, sheet_id, column_count, amount_col_index, tab_rgb=(0.8,0.9,1.0)):
         header_fmt = {
             'repeatCell': {
                 'range': {
                     'sheetId': sheet_id,
                     'startRowIndex': 0,
-                    'endRowIndex': 1
+                    'endRowIndex': 1,
+                    'startColumnIndex': 0,
+                    'endColumnIndex': column_count
                 },
                 'cell': {
                     'userEnteredFormat': {
@@ -305,8 +381,8 @@ class SheetsOutput(BaseOutput):
                 'range': {
                     'sheetId': sheet_id,
                     'startRowIndex': 1,
-                    'startColumnIndex': 4,
-                    'endColumnIndex': 5
+                    'startColumnIndex': amount_col_index,
+                    'endColumnIndex': amount_col_index + 1
                 },
                 'cell': {
                     'userEnteredFormat': {
@@ -335,7 +411,4 @@ class SheetsOutput(BaseOutput):
             }
         }
 
-        self.sheets_srv.spreadsheets().batchUpdate(
-            spreadsheetId=ss,
-            body={'requests': [header_fmt, amount_fmt, freeze_req]}
-        ).execute()
+        return [header_fmt, amount_fmt, freeze_req]

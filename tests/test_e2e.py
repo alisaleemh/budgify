@@ -296,7 +296,16 @@ def setup_sheet_mocks(monkeypatch):
         class WorksheetNotFound(Exception):
             pass
 
+    monkeypatch.setattr(sheets_output, 'Credentials', FakeCreds)
+    client = FakeClient()
+    monkeypatch.setattr(
+        sheets_output,
+        'gspread',
+        types.SimpleNamespace(authorize=lambda *_a, **_k: client, exceptions=FakeExceptions)
+    )
     def fake_build(*_a, **_k):
+        sheet = client.sheet
+
         class Dummy:
             def files(self):
                 return self
@@ -322,15 +331,32 @@ def setup_sheet_mocks(monkeypatch):
                 return self
             def batchUpdate(self, *a, **k):
                 return types.SimpleNamespace(execute=lambda: {})
+            def values(self):
+                class ValuesDummy:
+                    def batchClear(self_inner, *a, **k):
+                        ranges = k.get('body', {}).get('ranges', [])
+                        for rng in ranges:
+                            title = rng.split('!')[0].strip("'")
+                            try:
+                                ws = sheet.worksheet(title)
+                            except sheets_output.gspread.exceptions.WorksheetNotFound:
+                                continue
+                            ws.rows = []
+                        return types.SimpleNamespace(execute=lambda: {})
+                    def batchUpdate(self_inner, *a, **k):
+                        data = k.get('body', {}).get('data', [])
+                        for item in data:
+                            rng = item.get('range', '')
+                            title = rng.split('!')[0].strip("'")
+                            try:
+                                ws = sheet.worksheet(title)
+                            except sheets_output.gspread.exceptions.WorksheetNotFound:
+                                continue
+                            ws.rows = item.get('values', [])
+                        return types.SimpleNamespace(execute=lambda: {})
+                return ValuesDummy()
         return Dummy()
 
-    monkeypatch.setattr(sheets_output, 'Credentials', FakeCreds)
-    client = FakeClient()
-    monkeypatch.setattr(
-        sheets_output,
-        'gspread',
-        types.SimpleNamespace(authorize=lambda *_a, **_k: client, exceptions=FakeExceptions)
-    )
     monkeypatch.setattr(sheets_output, 'build', fake_build)
     return client
 

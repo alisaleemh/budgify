@@ -194,7 +194,16 @@ class SheetsOutput(BaseOutput):
             self._formatting_requests(summary_sheet_id, 10, amount_col_index=4, tab_rgb=(0.7,0.7,0.7))
         )
 
-        # 4) Reorder tabs
+        # 4) Summary charts
+        batch_requests.extend(
+            self._summary_charts_requests(
+                summary_sheet_id,
+                all_sheet_id,
+                len(all_rows)
+            )
+        )
+
+        # 5) Reorder tabs
         ordered = [self.SUMMARY, self.ALL_DATA]
         for m in range(1,13):
             t = f"{month_name[m]} {year}"
@@ -412,3 +421,87 @@ class SheetsOutput(BaseOutput):
         }
 
         return [header_fmt, amount_fmt, freeze_req]
+
+    def _summary_charts_requests(self, summary_sheet_id, all_sheet_id, all_row_count):
+        if all_row_count <= 1:
+            return []
+
+        def source_range(start_col, end_col):
+            return {
+                'sources': [{
+                    'sheetId': all_sheet_id,
+                    'startRowIndex': 0,
+                    'endRowIndex': all_row_count,
+                    'startColumnIndex': start_col,
+                    'endColumnIndex': end_col
+                }]
+            }
+
+        def add_basic_chart(title, pos_row, pos_col, filter_value=None, chart_type='COLUMN'):
+            chart_spec = {
+                'title': title,
+                'basicChart': {
+                    'chartType': chart_type,
+                    'legendPosition': 'BOTTOM_LEGEND',
+                    'headerCount': 1,
+                    'domains': [{
+                        'domain': {
+                            'sourceRange': source_range(0, 1)
+                        }
+                    }],
+                    'series': [{
+                        'series': {
+                            'sourceRange': source_range(5, 6)
+                        },
+                        'aggregateType': 'SUM'
+                    }]
+                }
+            }
+
+            if filter_value:
+                chart_spec['filterSpecs'] = [{
+                    'filterCriteria': {
+                        'condition': {
+                            'type': 'TEXT_EQ',
+                            'values': [{'userEnteredValue': filter_value}]
+                        }
+                    },
+                    'filterColumnIndex': 4
+                }]
+
+            return {
+                'addChart': {
+                    'chart': {
+                        'spec': chart_spec,
+                        'position': {
+                            'overlayPosition': {
+                                'anchorCell': {
+                                    'sheetId': summary_sheet_id,
+                                    'rowIndex': pos_row,
+                                    'columnIndex': pos_col
+                                },
+                                'offsetXPixels': 0,
+                                'offsetYPixels': 0,
+                                'widthPixels': 600,
+                                'heightPixels': 300
+                            }
+                        }
+                    }
+                }
+            }
+
+        requests = [
+            add_basic_chart('Monthly spending', 0, 0),
+            add_basic_chart('Restaurant spending by month', 16, 0, filter_value='restaurants'),
+            add_basic_chart('Grocery spending by month', 32, 0, filter_value='groceries'),
+        ]
+
+        pie_chart = add_basic_chart('YTD spending by category', 0, 8, chart_type='PIE')
+        pie_chart['addChart']['chart']['spec']['basicChart']['domains'] = [{
+            'domain': {
+                'sourceRange': source_range(4, 5)
+            }
+        }]
+        requests.append(pie_chart)
+
+        return requests

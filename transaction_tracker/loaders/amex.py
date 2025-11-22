@@ -52,6 +52,13 @@ class AmexLoader(BaseLoader):
 
             amt_raw = str(row[amt_col])
             cleaned = _CLEAN_AMOUNT.sub("", amt_raw)
+
+            # Some Amex exports include rows without an amount (e.g. NaN or empty
+            # strings).  Previously these rows raised ValueError and stopped the
+            # entire import.  Treat them as non-transactions and skip them.
+            if not cleaned:
+                continue
+
             try:
                 amount = float(cleaned)
             except ValueError:

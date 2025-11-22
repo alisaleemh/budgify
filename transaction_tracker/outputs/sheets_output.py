@@ -437,11 +437,11 @@ class SheetsOutput(BaseOutput):
                 }]
             }
 
-        def add_basic_chart(title, pos_row, pos_col, filter_value=None, chart_type='COLUMN'):
+        def add_basic_chart(title, pos_row, pos_col, filter_value=None):
             chart_spec = {
                 'title': title,
                 'basicChart': {
-                    'chartType': chart_type,
+                    'chartType': 'COLUMN',
                     'legendPosition': 'BOTTOM_LEGEND',
                     'headerCount': 1,
                     'domains': [{
@@ -452,8 +452,7 @@ class SheetsOutput(BaseOutput):
                     'series': [{
                         'series': {
                             'sourceRange': source_range(5, 6)
-                        },
-                        'aggregateType': 'SUM'
+                        }
                     }]
                 }
             }
@@ -466,7 +465,7 @@ class SheetsOutput(BaseOutput):
                             'values': [{'userEnteredValue': filter_value}]
                         }
                     },
-                    'filterColumnIndex': 4
+                    'columnIndex': 4
                 }]
 
             return {
@@ -496,12 +495,37 @@ class SheetsOutput(BaseOutput):
             add_basic_chart('Grocery spending by month', 32, 0, filter_value='groceries'),
         ]
 
-        pie_chart = add_basic_chart('YTD spending by category', 0, 8, chart_type='PIE')
-        pie_chart['addChart']['chart']['spec']['basicChart']['domains'] = [{
-            'domain': {
-                'sourceRange': source_range(4, 5)
+        pie_chart = {
+            'addChart': {
+                'chart': {
+                    'spec': {
+                        'title': 'YTD spending by category',
+                        'pieChart': {
+                            'legendPosition': 'RIGHT_LEGEND',
+                            'domain': {
+                                'sourceRange': source_range(4, 5)
+                            },
+                            'series': {
+                                'sourceRange': source_range(5, 6)
+                            }
+                        }
+                    },
+                    'position': {
+                        'overlayPosition': {
+                            'anchorCell': {
+                                'sheetId': summary_sheet_id,
+                                'rowIndex': 0,
+                                'columnIndex': 8
+                            },
+                            'offsetXPixels': 0,
+                            'offsetYPixels': 0,
+                            'widthPixels': 600,
+                            'heightPixels': 300
+                        }
+                    }
+                }
             }
-        }]
+        }
         requests.append(pie_chart)
 
         return requests

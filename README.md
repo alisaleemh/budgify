@@ -13,6 +13,35 @@ A professional, extensible command-line tool for importing, categorizing, and ex
   - **Google Sheets**: a single yearly workbook with per‑month tabs, an `AllData` tab, and a `Summary` pivot.
 - **Plugin-based design** for easy addition of new banks and output formats.
 
+## Web UI (Docker Compose)
+
+A minimal local-only web UI is included to edit categories and run Budgify inside Docker Compose.
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Bank statements on the host at `~/Documents/Statements`
+
+### Start the UI
+
+```bash
+docker-compose up --build
+```
+
+Then open http://localhost:8000. The page lists categories, allows add/delete/rename, and has a **Run Budgify** button that executes:
+
+```
+budgify --dir /statements --output sheets --config /app/config.yaml
+```
+
+Data is persisted to `./appdata` on the host:
+
+- `appdata/config.yaml` – editable Budgify config used by the UI and CLI
+- `appdata/last_run.*` – logs and status for the last run
+- `appdata/budgify.db` and other runtime files, if produced
+
+To adjust Google Sheets settings, edit `appdata/config.yaml` (the UI focuses on categories). The container bind-mounts `~/Documents/Statements` into `/statements` (read-only) so Budgify can read downloaded statements.
+
 ## Architecture
 
 ### Loader Interface

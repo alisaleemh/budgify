@@ -65,7 +65,11 @@ class AmexLoader(BaseLoader):
                 raise ValueError(f"Could not parse amount '{amt_raw}' in {file_path}")
 
             desc = str(row[desc_col]).strip()
-            merch= str(row[merchant_col]).strip()
+
+            merch_val = row[merchant_col]
+            merch = desc if pd.isna(merch_val) else str(merch_val).strip()
+            if not merch:
+                merch = desc
             tx = Transaction(date=d, description=desc, merchant=merch, amount=amount)
 
             is_payment = bool(_PAYMENT_RX.search(desc))

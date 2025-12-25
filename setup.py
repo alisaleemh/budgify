@@ -23,6 +23,7 @@ setup(
         "python-dotenv>=1.0",
         "mcp>=1.9",
         "XlsxWriter>=3.1",
+        "grpcio>=1.76",
 
     ],
     entry_points={

@@ -26,7 +26,9 @@ class SheetsOutput(BaseOutput):
         "car",
         "communications",
         "commute",
+        "groceries",
         "misc",
+        "restaurants",
         "subscription",
     ]
 

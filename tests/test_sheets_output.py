@@ -54,6 +54,18 @@ def test_build_chart_tables_orders_and_aggregates():
         ['February 2024', 0],
         ['March 2024', 0],
     ]
+    assert tables['groceries'] == [
+        ['Month', 'Total'],
+        ['January 2024', 25.0],
+        ['February 2024', 0],
+        ['March 2024', 0],
+    ]
+    assert tables['restaurants'] == [
+        ['Month', 'Total'],
+        ['January 2024', 0],
+        ['February 2024', 4.0],
+        ['March 2024', 20.0],
+    ]
     assert tables['categories'][0] == ['Category', 'Total']
     assert tables['categories'][1:] == [
         ['Groceries', 25.0],

@@ -24,7 +24,6 @@ class SheetsOutput(BaseOutput):
     CHARTS    = "Charts"
     CHART_CATEGORIES = [
         "car",
-        "communications",
         "groceries",
         "misc",
         "restaurants",

@@ -35,8 +35,11 @@ recurring_transactions:
     # end_date defaults to today if omitted
 
 categories:
-  restaurants: []
+  car: []
   groceries: []
+  misc: []
+  restaurants: []
+  subscription: []
   fun: []
   fuel: []
   # etc.

@@ -151,9 +151,9 @@ budgify --dir ~/Downloads/statements --output excel
 ```
 
 Generates a local `Budget2025.xlsx` workbook with monthly tabs (sorted from
-largest to smallest transaction), an `AllData` tab, and a manually generated
-`Summary` sheet that aggregates totals by month and category without using Excel
-PivotTables.
+largest to smallest transaction), an `AllData` tab, a `Summary` sheet that
+aggregates totals by month and category without using Excel PivotTables, and a
+`Charts` sheet with monthly/category visuals.
 
 ### Manual Transactions
 

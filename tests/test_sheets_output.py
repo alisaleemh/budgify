@@ -48,17 +48,23 @@ def test_build_chart_tables_orders_and_aggregates():
         ['February 2024', 12.0],
         ['March 2024', 20.0],
     ]
-    assert tables['restaurants'] == [
+    assert tables['car'] == [
         ['Month', 'Total'],
         ['January 2024', 0],
-        ['February 2024', 4.0],
-        ['March 2024', 20.0],
+        ['February 2024', 0],
+        ['March 2024', 0],
     ]
     assert tables['groceries'] == [
         ['Month', 'Total'],
         ['January 2024', 25.0],
         ['February 2024', 0],
         ['March 2024', 0],
+    ]
+    assert tables['restaurants'] == [
+        ['Month', 'Total'],
+        ['January 2024', 0],
+        ['February 2024', 4.0],
+        ['March 2024', 20.0],
     ]
     assert tables['categories'][0] == ['Category', 'Total']
     assert tables['categories'][1:] == [
@@ -90,9 +96,8 @@ def test_charts_tab_requests_anchors_pie_within_grid():
     out = object.__new__(SheetsOutput)
     chart_layout = {
         'monthly': {'start_row': 0, 'row_count': 2},
-        'restaurants': {'start_row': 4, 'row_count': 2},
-        'groceries': {'start_row': 8, 'row_count': 2},
-        'categories': {'start_row': 12, 'row_count': 3},
+        'car': {'start_row': 4, 'row_count': 2},
+        'categories': {'start_row': 8, 'row_count': 3},
     }
 
     requests = out._charts_tab_requests(chart_sheet_id=5, chart_layout=chart_layout)

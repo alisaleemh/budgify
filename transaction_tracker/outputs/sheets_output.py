@@ -21,6 +21,7 @@ class SheetsOutput(BaseOutput):
     MONTH_FMT = "%B %Y"
     ALL_DATA  = "AllData"
     SUMMARY   = "Summary"
+    CHARTS    = "Charts"
 
     def __init__(self, config):
         google_cfg  = config.get('google', {})
@@ -115,6 +116,7 @@ class SheetsOutput(BaseOutput):
         # Ensure aggregate tabs exist before fetching metadata
         self._get_tab(sh, self.ALL_DATA, created, cols='6')
         self._get_tab(sh, self.SUMMARY, created, cols='10')
+        self._get_tab(sh, self.CHARTS, created, cols='10')
 
         # 2) AllData tab: combine & dedupe
         monthly_data = {}
@@ -182,6 +184,7 @@ class SheetsOutput(BaseOutput):
 
         # 3) Summary tab: single pivot grouping month & category
         clear_ranges.append(f"'{self.SUMMARY}'!A:Z")
+        clear_ranges.append(f"'{self.CHARTS}'!A:Z")
         summary_sheet_id = id_map[self.SUMMARY]
         batch_requests.append(
             self._summary_pivot_request(
@@ -194,8 +197,32 @@ class SheetsOutput(BaseOutput):
             self._formatting_requests(summary_sheet_id, 10, amount_col_index=4, tab_rgb=(0.7,0.7,0.7))
         )
 
-        # 4) Reorder tabs
-        ordered = [self.SUMMARY, self.ALL_DATA]
+        # 4) Charts tab with aggregated tables + visuals
+        chart_sheet_id = id_map[self.CHARTS]
+        chart_tables = self._build_chart_tables(all_rows)
+        chart_layout = {}
+        start_row = 0
+        for key in ('monthly', 'restaurants', 'groceries', 'categories'):
+            table = chart_tables[key]
+            chart_layout[key] = {
+                'start_row': start_row,
+                'row_count': len(table)
+            }
+            end_cell = rowcol_to_a1(start_row + len(table), 2)
+            value_updates.append({
+                'range': f"'{self.CHARTS}'!A{start_row + 1}:{end_cell}",
+                'values': table
+            })
+            start_row += len(table) + 2
+        batch_requests.extend(
+            self._charts_tab_requests(
+                chart_sheet_id,
+                chart_layout
+            )
+        )
+
+        # 5) Reorder tabs
+        ordered = [self.SUMMARY, self.CHARTS, self.ALL_DATA]
         for m in range(1,13):
             t = f"{month_name[m]} {year}"
             if t in id_map:
@@ -412,3 +439,165 @@ class SheetsOutput(BaseOutput):
         }
 
         return [header_fmt, amount_fmt, freeze_req]
+
+    def _build_chart_tables(self, all_rows):
+        data_rows = all_rows[1:]
+        month_totals = {}
+        restaurant_totals = {}
+        grocery_totals = {}
+        category_totals = {}
+        month_sort = {}
+
+        for row in data_rows:
+            if len(row) < 6:
+                continue
+            month = row[0]
+            category = (row[4] or '').strip()
+            amount = row[5] or 0
+
+            if month:
+                month_totals[month] = month_totals.get(month, 0) + amount
+                if month not in month_sort:
+                    try:
+                        month_sort[month] = datetime.strptime(month, self.MONTH_FMT)
+                    except ValueError:
+                        month_sort[month] = month
+
+            category_norm = category.lower()
+            if category_norm == 'restaurants':
+                restaurant_totals[month] = restaurant_totals.get(month, 0) + amount
+            if category_norm == 'groceries':
+                grocery_totals[month] = grocery_totals.get(month, 0) + amount
+
+            if category:
+                category_totals[category] = category_totals.get(category, 0) + amount
+
+        def month_sort_key(value):
+            return month_sort.get(value, value)
+
+        monthly_rows = [
+            [month, month_totals[month]]
+            for month in sorted(month_totals, key=month_sort_key)
+        ]
+        restaurant_rows = [
+            [month, restaurant_totals.get(month, 0)]
+            for month in sorted(month_totals, key=month_sort_key)
+        ]
+        grocery_rows = [
+            [month, grocery_totals.get(month, 0)]
+            for month in sorted(month_totals, key=month_sort_key)
+        ]
+        category_rows = [
+            [category, total]
+            for category, total in sorted(category_totals.items(), key=lambda item: item[1], reverse=True)
+        ]
+
+        return {
+            'monthly': [['Month', 'Total']] + monthly_rows,
+            'restaurants': [['Month', 'Total']] + restaurant_rows,
+            'groceries': [['Month', 'Total']] + grocery_rows,
+            'categories': [['Category', 'Total']] + category_rows
+        }
+
+    def _charts_tab_requests(self, chart_sheet_id, chart_layout):
+        requests = []
+
+        def pivot_range(start_row, row_count, start_col=0, col_count=2):
+            return {
+                'sources': [{
+                    'sheetId': chart_sheet_id,
+                    'startRowIndex': start_row,
+                    'endRowIndex': start_row + row_count,
+                    'startColumnIndex': start_col,
+                    'endColumnIndex': start_col + col_count
+                }]
+            }
+
+        def add_basic_chart(title, anchor_row, anchor_col, data_start_row, data_row_count):
+            if data_row_count <= 1:
+                return None
+            return {
+                'addChart': {
+                    'chart': {
+                        'spec': {
+                            'title': title,
+                            'basicChart': {
+                                'chartType': 'COLUMN',
+                                'legendPosition': 'BOTTOM_LEGEND',
+                                'headerCount': 1,
+                                'domains': [{
+                                    'domain': {
+                                        'sourceRange': pivot_range(data_start_row, data_row_count, start_col=0, col_count=1)
+                                    }
+                                }],
+                                'series': [{
+                                    'series': {
+                                        'sourceRange': pivot_range(data_start_row, data_row_count, start_col=1, col_count=1)
+                                    }
+                                }]
+                            }
+                        },
+                        'position': {
+                            'overlayPosition': {
+                                'anchorCell': {
+                                    'sheetId': chart_sheet_id,
+                                    'rowIndex': anchor_row,
+                                    'columnIndex': anchor_col
+                                },
+                                'offsetXPixels': 0,
+                                'offsetYPixels': 0,
+                                'widthPixels': 600,
+                                'heightPixels': 300
+                            }
+                        }
+                    }
+                }
+            }
+
+        monthly = chart_layout['monthly']
+        restaurant = chart_layout['restaurants']
+        grocery = chart_layout['groceries']
+        categories = chart_layout['categories']
+
+        for chart_request in (
+            add_basic_chart('Monthly spending', 0, 6, monthly['start_row'], monthly['row_count']),
+            add_basic_chart('Restaurant spending by month', 18, 6, restaurant['start_row'], restaurant['row_count']),
+            add_basic_chart('Grocery spending by month', 36, 6, grocery['start_row'], grocery['row_count'])
+        ):
+            if chart_request:
+                requests.append(chart_request)
+
+        if categories['row_count'] > 1:
+            requests.append({
+                'addChart': {
+                    'chart': {
+                        'spec': {
+                            'title': 'YTD spending by category',
+                            'pieChart': {
+                                'legendPosition': 'RIGHT_LEGEND',
+                                'domain': {
+                                    'sourceRange': pivot_range(categories['start_row'] + 1, categories['row_count'] - 1, start_col=0, col_count=1)
+                                },
+                                'series': {
+                                    'sourceRange': pivot_range(categories['start_row'] + 1, categories['row_count'] - 1, start_col=1, col_count=1)
+                                }
+                            }
+                        },
+                        'position': {
+                            'overlayPosition': {
+                                'anchorCell': {
+                                    'sheetId': chart_sheet_id,
+                                    'rowIndex': 0,
+                                    'columnIndex': 8
+                                },
+                                'offsetXPixels': 0,
+                                'offsetYPixels': 0,
+                                'widthPixels': 600,
+                                'heightPixels': 300
+                            }
+                        }
+                    }
+                }
+            })
+
+        return requests

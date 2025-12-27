@@ -13,6 +13,21 @@ output_modules:
 # Path to optional manual transaction YAML
 manual_transactions_file: manual.yaml
 
+# Optional recurring transactions defined in config
+recurring_transactions:
+  - description: Rent
+    merchant: Landlord
+    amount: 1500
+    cadence: monthly
+    start_date: 2025-01-01
+    end_date: 2025-12-01
+  - description: Gym Membership
+    merchant: Fitness Club
+    amount: 40.00
+    cadence: weekly
+    start_date: 2025-01-03
+    count: 10
+
 categories:
   restaurants: []
   groceries: []

@@ -586,7 +586,7 @@ class SheetsOutput(BaseOutput):
                                 'anchorCell': {
                                     'sheetId': chart_sheet_id,
                                     'rowIndex': 0,
-                                    'columnIndex': 14
+                                    'columnIndex': 8
                                 },
                                 'offsetXPixels': 0,
                                 'offsetYPixels': 0,

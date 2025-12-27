@@ -56,3 +56,25 @@ def test_build_chart_tables_skips_short_rows():
         ["January 2024", 10.0],
         ["February 2024", 5.0],
     ]
+
+
+def test_build_chart_tables_includes_configured_categories():
+    out = object.__new__(ExcelOutput)
+    all_rows = [
+        ["month", "date", "description", "merchant", "category", "amount"],
+        ["January 2024", "2024-01-05", "Desc", "Merc", "groceries", 10.0],
+    ]
+
+    tables = out._build_chart_tables(
+        all_rows,
+        categories={"car": [], "groceries": [], "misc": [], "restaurants": [], "subscription": []},
+    )
+
+    assert tables["categories"][0] == ["Category", "Total"]
+    assert tables["categories"][1:] == [
+        ["groceries", 10.0],
+        ["car", 0],
+        ["misc", 0],
+        ["restaurants", 0],
+        ["subscription", 0],
+    ]

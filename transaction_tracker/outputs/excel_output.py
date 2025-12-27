@@ -141,7 +141,7 @@ class ExcelOutput(BaseOutput):
         charts_ws = workbook.add_worksheet(self.CHARTS)
         charts_ws.freeze_panes(1, 0)
         charts_ws.set_column(1, 1, None, amount_fmt)
-        chart_tables = self._build_chart_tables(all_rows)
+        chart_tables = self._build_chart_tables(all_rows, categories=self.config.get("categories", {}))
         chart_layout = {}
         start_row = 0
         for key in ("monthly", "restaurants", "groceries", "categories"):
@@ -156,12 +156,13 @@ class ExcelOutput(BaseOutput):
         workbook.close()
         print(f"Written Excel workbook {out_path}")
 
-    def _build_chart_tables(self, all_rows):
+    def _build_chart_tables(self, all_rows, categories=None):
         data_rows = all_rows[1:]
+        categories = categories or {}
         month_totals = {}
         restaurant_totals = {}
         grocery_totals = {}
-        category_totals = {}
+        category_totals = {name: 0 for name in categories}
         month_sort = {}
 
         for row in data_rows:

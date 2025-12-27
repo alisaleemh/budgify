@@ -250,4 +250,5 @@ class ExcelOutput(BaseOutput):
             })
             chart.set_title({"name": "YTD spending by category"})
             chart.set_legend({"position": "right"})
-            charts_ws.insert_chart(0, 8, chart, {"x_offset": 0, "y_offset": 0})
+            chart.set_size({"width": 480, "height": 300})
+            charts_ws.insert_chart(0, 14, chart, {"x_offset": 0, "y_offset": 0})

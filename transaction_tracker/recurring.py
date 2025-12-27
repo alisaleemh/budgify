@@ -47,10 +47,8 @@ def _expand_entry(entry) -> List[Transaction]:
 
     end_date = _parse_date(entry.get("end_date"), "end_date", entry)
     count = entry.get("count")
-    if end_date is None and count is None:
-        raise ValueError(
-            "Recurring entries require either 'end_date' or 'count'."
-        )
+    if end_date is None:
+        end_date = date.today()
     if count is not None:
         count = int(count)
         if count <= 0:

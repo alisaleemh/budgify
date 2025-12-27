@@ -177,7 +177,8 @@ These entries are loaded alongside statement data and deduplicated.
 
 You can define recurring transactions directly in `config.yaml` under
 `recurring_transactions`. Each entry includes the recurring details and either
-an `end_date` or a `count` to control how many transactions are generated.
+an `end_date` or a `count` to control how many transactions are generated. If
+`end_date` is omitted, it defaults to today.
 
 Example:
 

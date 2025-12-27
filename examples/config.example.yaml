@@ -27,6 +27,12 @@ recurring_transactions:
     cadence: weekly
     start_date: 2025-01-03
     count: 10
+  - description: Coffee
+    merchant: Cafe
+    amount: 3.50
+    cadence: daily
+    start_date: 2025-01-01
+    # end_date defaults to today if omitted
 
 categories:
   restaurants: []

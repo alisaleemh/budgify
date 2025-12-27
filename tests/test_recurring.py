@@ -85,6 +85,36 @@ def test_expand_recurring_end_date_is_inclusive():
     ]
 
 
+def test_expand_recurring_defaults_end_date_to_today(monkeypatch):
+    import transaction_tracker.recurring as recurring
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2025, 1, 5)
+
+    monkeypatch.setattr(recurring, "date", FixedDate)
+
+    txs = recurring.expand_recurring_transactions(
+        [
+            {
+                "description": "Daily",
+                "merchant": "Test",
+                "amount": 1,
+                "cadence": "daily",
+                "start_date": "2025-01-01",
+            }
+        ]
+    )
+    assert [tx.date for tx in txs] == [
+        date(2025, 1, 1),
+        date(2025, 1, 2),
+        date(2025, 1, 3),
+        date(2025, 1, 4),
+        date(2025, 1, 5),
+    ]
+
+
 def test_cli_merges_recurring_and_manual(tmp_path):
     stmts = tmp_path / "stmts"
     stmts.mkdir()

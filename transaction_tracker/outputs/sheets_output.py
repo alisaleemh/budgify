@@ -22,6 +22,18 @@ class SheetsOutput(BaseOutput):
     ALL_DATA  = "AllData"
     SUMMARY   = "Summary"
     CHARTS    = "Charts"
+    CHART_CATEGORIES = [
+        "car",
+        "charity",
+        "communications",
+        "commute",
+        "groceries",
+        "insurance",
+        "medical",
+        "misc",
+        "restaurants",
+        "subscription",
+    ]
 
     def __init__(self, config):
         google_cfg  = config.get('google', {})
@@ -202,7 +214,7 @@ class SheetsOutput(BaseOutput):
         chart_tables = self._build_chart_tables(all_rows)
         chart_layout = {}
         start_row = 0
-        for key in ('monthly', 'restaurants', 'groceries', 'categories'):
+        for key in ['monthly', *self.CHART_CATEGORIES, 'categories']:
             table = chart_tables[key]
             chart_layout[key] = {
                 'start_row': start_row,
@@ -443,9 +455,8 @@ class SheetsOutput(BaseOutput):
     def _build_chart_tables(self, all_rows):
         data_rows = all_rows[1:]
         month_totals = {}
-        restaurant_totals = {}
-        grocery_totals = {}
         category_totals = {}
+        category_month_totals = {category: {} for category in self.CHART_CATEGORIES}
         month_sort = {}
 
         for row in data_rows:
@@ -464,10 +475,10 @@ class SheetsOutput(BaseOutput):
                         month_sort[month] = month
 
             category_norm = category.lower()
-            if category_norm == 'restaurants':
-                restaurant_totals[month] = restaurant_totals.get(month, 0) + amount
-            if category_norm == 'groceries':
-                grocery_totals[month] = grocery_totals.get(month, 0) + amount
+            if category_norm in category_month_totals:
+                category_month_totals[category_norm][month] = (
+                    category_month_totals[category_norm].get(month, 0) + amount
+                )
 
             if category:
                 category_totals[category] = category_totals.get(category, 0) + amount
@@ -479,24 +490,25 @@ class SheetsOutput(BaseOutput):
             [month, month_totals[month]]
             for month in sorted(month_totals, key=month_sort_key)
         ]
-        restaurant_rows = [
-            [month, restaurant_totals.get(month, 0)]
-            for month in sorted(month_totals, key=month_sort_key)
-        ]
-        grocery_rows = [
-            [month, grocery_totals.get(month, 0)]
-            for month in sorted(month_totals, key=month_sort_key)
-        ]
         category_rows = [
             [category, total]
             for category, total in sorted(category_totals.items(), key=lambda item: item[1], reverse=True)
         ]
+        category_tables = {
+            category: [
+                ['Month', 'Total'],
+                *[
+                    [month, category_month_totals[category].get(month, 0)]
+                    for month in sorted(month_totals, key=month_sort_key)
+                ],
+            ]
+            for category in self.CHART_CATEGORIES
+        }
 
         return {
             'monthly': [['Month', 'Total']] + monthly_rows,
-            'restaurants': [['Month', 'Total']] + restaurant_rows,
-            'groceries': [['Month', 'Total']] + grocery_rows,
-            'categories': [['Category', 'Total']] + category_rows
+            'categories': [['Category', 'Total']] + category_rows,
+            **category_tables,
         }
 
     def _charts_tab_requests(self, chart_sheet_id, chart_layout):
@@ -555,15 +567,25 @@ class SheetsOutput(BaseOutput):
             }
 
         monthly = chart_layout['monthly']
-        restaurant = chart_layout['restaurants']
-        grocery = chart_layout['groceries']
         categories = chart_layout['categories']
+        chart_order = ['monthly'] + self.CHART_CATEGORIES
 
-        for chart_request in (
-            add_basic_chart('Monthly spending', 0, 6, monthly['start_row'], monthly['row_count']),
-            add_basic_chart('Restaurant spending by month', 18, 6, restaurant['start_row'], restaurant['row_count']),
-            add_basic_chart('Grocery spending by month', 36, 6, grocery['start_row'], grocery['row_count'])
-        ):
+        for idx, chart_key in enumerate(chart_order):
+            if chart_key not in chart_layout:
+                continue
+            chart_meta = chart_layout[chart_key]
+            title = (
+                'Monthly spending'
+                if chart_key == 'monthly'
+                else f"{chart_key.title()} spending by month"
+            )
+            chart_request = add_basic_chart(
+                title,
+                idx * 18,
+                6,
+                chart_meta['start_row'],
+                chart_meta['row_count']
+            )
             if chart_request:
                 requests.append(chart_request)
 

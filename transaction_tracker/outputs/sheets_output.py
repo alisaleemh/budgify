@@ -449,6 +449,8 @@ class SheetsOutput(BaseOutput):
         month_sort = {}
 
         for row in data_rows:
+            if len(row) < 6:
+                continue
             month = row[0]
             category = (row[4] or '').strip()
             amount = row[5] or 0

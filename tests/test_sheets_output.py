@@ -68,6 +68,24 @@ def test_build_chart_tables_orders_and_aggregates():
     ]
 
 
+def test_build_chart_tables_skips_short_rows():
+    out = object.__new__(SheetsOutput)
+    all_rows = [
+        ['month', 'date', 'description', 'merchant', 'category', 'amount'],
+        ['January 2024', '2024-01-05', 'Desc', 'Merc', 'Groceries', 10.0],
+        ['Malformed'],
+        ['February 2024', '2024-02-10', 'Desc', 'Merc', 'Restaurants', 5.0],
+    ]
+
+    tables = out._build_chart_tables(all_rows)
+
+    assert tables['monthly'] == [
+        ['Month', 'Total'],
+        ['January 2024', 10.0],
+        ['February 2024', 5.0],
+    ]
+
+
 def test_charts_tab_requests_anchors_pie_within_grid():
     out = object.__new__(SheetsOutput)
     chart_layout = {

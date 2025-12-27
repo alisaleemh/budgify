@@ -226,6 +226,7 @@ class SheetsOutput(BaseOutput):
                 'values': table
             })
             start_row += len(table) + 2
+        self._ensure_chart_grid_size(batch_requests, chart_sheet_id, start_row)
         batch_requests.extend(
             self._charts_tab_requests(
                 chart_sheet_id,
@@ -451,6 +452,22 @@ class SheetsOutput(BaseOutput):
         }
 
         return [header_fmt, amount_fmt, freeze_req]
+
+    def _ensure_chart_grid_size(self, batch_requests, chart_sheet_id, row_count, column_count=10):
+        if row_count <= 0:
+            return
+        batch_requests.append({
+            'updateSheetProperties': {
+                'properties': {
+                    'sheetId': chart_sheet_id,
+                    'gridProperties': {
+                        'rowCount': row_count,
+                        'columnCount': column_count
+                    }
+                },
+                'fields': 'gridProperties.rowCount,gridProperties.columnCount'
+            }
+        })
 
     def _build_chart_tables(self, all_rows):
         data_rows = all_rows[1:]

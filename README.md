@@ -71,6 +71,15 @@ output_modules:
 # Optional YAML listing any cash or other manual transactions
 manual_transactions_file: manual.yaml
 
+# Optional recurring transactions defined inline
+recurring_transactions:
+  - description: Rent
+    merchant: Landlord
+    amount: 1500
+    cadence: monthly
+    start_date: 2025-01-01
+    end_date: 2025-12-01
+
 categories:
   restaurants: [...]
   groceries:   [...]
@@ -164,6 +173,34 @@ Example `manual.yaml`:
 
 These entries are loaded alongside statement data and deduplicated.
 
+### Recurring Transactions
+
+You can define recurring transactions directly in `config.yaml` under
+`recurring_transactions`. Each entry includes the recurring details and either
+an `end_date` or a `count` to control how many transactions are generated. If
+`end_date` is omitted, it defaults to today.
+
+Example:
+
+```yaml
+recurring_transactions:
+  - description: Rent
+    merchant: Landlord
+    amount: 1500
+    cadence: monthly   # daily | weekly | monthly
+    start_date: 2025-01-01
+    end_date: 2025-12-01
+  - description: Gym Membership
+    merchant: Fitness Club
+    amount: 40.00
+    cadence: weekly
+    start_date: 2025-01-03
+    count: 10
+```
+
+Recurring entries are expanded into transactions at runtime, merged with manual
+and statement transactions, and deduplicated alongside everything else.
+
 ### Google Sheets Export
 
 1. Ensure **Sheets API** and **Drive API** are enabled in Google Cloud.
@@ -253,4 +290,3 @@ Google Sheets APIs are mocked, so the test suite runs offline.
 ## License
 
 Released under the [MIT License](LICENSE).
-

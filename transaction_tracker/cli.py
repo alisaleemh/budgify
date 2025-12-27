@@ -7,6 +7,7 @@ from transaction_tracker.loaders import get_loader
 from transaction_tracker.outputs import get_output
 from transaction_tracker.utils import dedupe_transactions
 from transaction_tracker.manual import load_manual_transactions
+from transaction_tracker.recurring import expand_recurring_transactions
 from transaction_tracker.ai import generate_report
 from transaction_tracker.database import append_transactions
 
@@ -96,6 +97,12 @@ def main(statements_dir, output_format, include_payments, config_path,
             all_txs.extend(load_manual_transactions(manual_cfg_path))
         except Exception as e:
             click.echo(f"Error loading manual transactions: {e}", err=True)
+
+    # Recurring transactions
+    try:
+        all_txs.extend(expand_recurring_transactions(cfg.get('recurring_transactions')))
+    except Exception as e:
+        click.echo(f"Error loading recurring transactions: {e}", err=True)
 
     # Deduplicate globally
     unique_txs = dedupe_transactions(all_txs)

@@ -23,6 +23,10 @@ setup(
         "python-dotenv>=1.0",
         "mcp>=1.9",
         "XlsxWriter>=3.1",
+        "fastapi>=0.110",
+        "uvicorn[standard]>=0.22",
+        "Jinja2>=3.1",
+        "python-multipart>=0.0.9",
 
     ],
     entry_points={

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Budgify UI</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.5; }
+        h1 { margin-bottom: 0; }
+        h2 { margin-top: 30px; }
+        .message { padding: 10px; border-radius: 4px; margin: 10px 0; }
+        .success { background: #e8f5e9; color: #2e7d32; }
+        .error { background: #ffebee; color: #c62828; }
+        form { margin: 0 0 10px 0; }
+        button { padding: 6px 12px; }
+        ul { list-style: none; padding-left: 0; }
+        li { margin-bottom: 6px; }
+        .status-success { color: #2e7d32; font-weight: bold; }
+        .status-failure { color: #c62828; font-weight: bold; }
+        .card { border: 1px solid #ddd; padding: 16px; border-radius: 6px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+        pre { background: #111; color: #e0e0e0; padding: 12px; border-radius: 6px; max-height: 400px; overflow: auto; }
+        .inline-form { display: inline; margin-left: 8px; }
+        .paths { font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>Budgify UI</h1>
+    <p>Manage your Budgify config and run the CLI from a simple local web page.</p>
+
+    {% if message %}
+    <div class="message success">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+    <div class="message error">{{ error }}</div>
+    {% endif %}
+
+    <div class="grid">
+        <section class="card">
+            <h2>Categories</h2>
+            <ul>
+                {% for name, values in categories.items() %}
+                    <li>
+                        <strong>{{ name }}</strong>
+                        <form class="inline-form" method="post" action="/categories/delete">
+                            <input type="hidden" name="name" value="{{ name }}" />
+                            <button type="submit">Delete</button>
+                        </form>
+                        <form class="inline-form" method="post" action="/categories/rename">
+                            <input type="hidden" name="old_name" value="{{ name }}" />
+                            <input type="text" name="new_name" placeholder="New name" />
+                            <button type="submit">Rename</button>
+                        </form>
+                    </li>
+                {% else %}
+                    <li>No categories yet.</li>
+                {% endfor %}
+            </ul>
+
+            <form method="post" action="/categories/add">
+                <input type="text" name="name" placeholder="New category name" required />
+                <button type="submit">Add Category</button>
+            </form>
+
+            <form method="post" action="/reload">
+                <button type="submit">Reload Config</button>
+            </form>
+        </section>
+
+        <section class="card">
+            <h2>Budgify</h2>
+            <p>Runs <code>budgify --dir /statements --output sheets --config /app/config.yaml</code></p>
+            <form method="post" action="/run">
+                <button type="submit" {% if run_status.running %}disabled{% endif %}>Run Budgify</button>
+            </form>
+            {% if run_status.running %}
+                <p>Status: <span class="status-success">Running...</span></p>
+            {% elif run_status.last_result %}
+                <p>Status: <span class="status-{{ run_status.last_result.status }}">{{ run_status.last_result.status | capitalize }}</span></p>
+                <p>Last run: {{ run_status.last_result.timestamp }}</p>
+                <p>Exit code: {{ run_status.last_result.returncode }}</p>
+            {% else %}
+                <p>Status: Not run yet.</p>
+            {% endif %}
+
+            <h3>Last output</h3>
+            {% if run_status.last_result %}
+                <pre>{{ run_status.last_result.stdout }}
+{{ run_status.last_result.stderr }}</pre>
+            {% else %}
+                <p>No runs yet.</p>
+            {% endif %}
+        </section>
+
+        <section class="card">
+            <h2>Paths</h2>
+            <p class="paths">Statements directory: {{ statements_path }}</p>
+            <p class="paths">Config path: {{ config_path }}</p>
+            <p class="paths">Persisted data directory: /appdata</p>
+        </section>
+    </div>
+</body>
+</html>

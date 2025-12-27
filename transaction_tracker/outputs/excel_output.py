@@ -49,6 +49,15 @@ class ExcelOutput(BaseOutput):
         all_rows = []
         monthly_totals = {}
         summary_data = {}
+
+        summary_ws = workbook.add_worksheet(self.SUMMARY)
+        summary_ws.freeze_panes(1, 0)
+        summary_ws.set_column(2, 2, None, amount_fmt)
+
+        charts_ws = workbook.add_worksheet(self.CHARTS)
+        charts_ws.freeze_panes(1, 0)
+        charts_ws.set_column(1, 1, None, amount_fmt)
+
         for month_str in months:
             dt = datetime.strptime(month_str, "%Y-%m")
             sheet_name = dt.strftime(self.MONTH_FMT)
@@ -114,9 +123,6 @@ class ExcelOutput(BaseOutput):
         })
 
         # Summary worksheet manually aggregating by month & category
-        summary_ws = workbook.add_worksheet(self.SUMMARY)
-        summary_ws.freeze_panes(1, 0)
-        summary_ws.set_column(2, 2, None, amount_fmt)
         row_idx = 0
         grand_total = 0.0
         for month_str in months:
@@ -138,13 +144,18 @@ class ExcelOutput(BaseOutput):
         summary_ws.write_number(row_idx, 2, grand_total, amount_fmt)
 
         # Charts worksheet with aggregates and visuals
-        charts_ws = workbook.add_worksheet(self.CHARTS)
-        charts_ws.freeze_panes(1, 0)
-        charts_ws.set_column(1, 1, None, amount_fmt)
         chart_tables = self._build_chart_tables(all_rows, categories=self.config.get("categories", {}))
         chart_layout = {}
         start_row = 0
-        for key in ("monthly", "restaurants", "groceries", "categories"):
+        for key in (
+            "monthly",
+            "restaurants",
+            "groceries",
+            "car",
+            "misc",
+            "subscription",
+            "categories",
+        ):
             table = chart_tables[key]
             chart_layout[key] = {"start_row": start_row, "row_count": len(table)}
             for offset, row in enumerate(table):
@@ -158,10 +169,20 @@ class ExcelOutput(BaseOutput):
 
     def _build_chart_tables(self, all_rows, categories=None):
         data_rows = all_rows[1:]
-        categories = categories or {}
+        default_categories = {
+            "car": [],
+            "groceries": [],
+            "misc": [],
+            "restaurants": [],
+            "subscription": [],
+        }
+        categories = {**default_categories, **(categories or {})}
         month_totals = {}
         restaurant_totals = {}
         grocery_totals = {}
+        category_month_totals = {
+            name: {} for name in categories
+        }
         category_totals = {name: 0 for name in categories}
         month_sort = {}
 
@@ -185,6 +206,10 @@ class ExcelOutput(BaseOutput):
                 restaurant_totals[month] = restaurant_totals.get(month, 0) + amount
             if category_norm == "groceries":
                 grocery_totals[month] = grocery_totals.get(month, 0) + amount
+            if category_norm in category_month_totals and month:
+                category_month_totals[category_norm][month] = (
+                    category_month_totals[category_norm].get(month, 0) + amount
+                )
 
             if category:
                 category_totals[category] = category_totals.get(category, 0) + amount
@@ -204,17 +229,26 @@ class ExcelOutput(BaseOutput):
             [month, grocery_totals.get(month, 0)]
             for month in sorted(month_totals, key=month_sort_key)
         ]
+        category_month_rows = {}
+        for category, totals in category_month_totals.items():
+            category_month_rows[category] = [
+                [month, totals.get(month, 0)]
+                for month in sorted(month_totals, key=month_sort_key)
+            ]
         category_rows = [
             [category, total]
             for category, total in sorted(category_totals.items(), key=lambda item: item[1], reverse=True)
         ]
 
-        return {
+        tables = {
             "monthly": [["Month", "Total"]] + monthly_rows,
             "restaurants": [["Month", "Total"]] + restaurant_rows,
             "groceries": [["Month", "Total"]] + grocery_rows,
             "categories": [["Category", "Total"]] + category_rows,
         }
+        for category, rows in category_month_rows.items():
+            tables[category] = [["Month", "Total"]] + rows
+        return tables
 
     def _insert_charts(self, workbook, charts_ws, chart_layout):
         def table_range(table_key):
@@ -235,11 +269,15 @@ class ExcelOutput(BaseOutput):
             })
             chart.set_title({"name": title})
             chart.set_legend({"position": "bottom"})
+            chart.set_size({"width": 480, "height": 300})
             charts_ws.insert_chart(anchor_row, anchor_col, chart, {"x_offset": 0, "y_offset": 0})
 
         add_column_chart("Monthly spending", 0, 6, "monthly")
         add_column_chart("Restaurant spending by month", 18, 6, "restaurants")
         add_column_chart("Grocery spending by month", 36, 6, "groceries")
+        add_column_chart("Car spending by month", 0, 14, "car")
+        add_column_chart("Misc spending by month", 18, 14, "misc")
+        add_column_chart("Subscription spending by month", 36, 14, "subscription")
 
         categories_start, categories_rows = table_range("categories")
         if categories_rows > 1:
@@ -252,4 +290,4 @@ class ExcelOutput(BaseOutput):
             chart.set_title({"name": "YTD spending by category"})
             chart.set_legend({"position": "right"})
             chart.set_size({"width": 480, "height": 300})
-            charts_ws.insert_chart(0, 14, chart, {"x_offset": 0, "y_offset": 0})
+            charts_ws.insert_chart(54, 6, chart, {"x_offset": 0, "y_offset": 0})

@@ -241,7 +241,7 @@ class FakeWorksheet:
         # Simulate pivot-table columns appended to the right of transaction
         # data, which happens in the real Google Sheets output. Only
         # non-aggregate tabs (i.e., monthly tabs) include these extra values.
-        if self.title not in ('AllData', 'Summary'):
+        if self.title not in ('AllData', 'Summary', 'Charts'):
             return [row + ['0'] for row in self.rows]
         return self.rows
 
@@ -320,6 +320,7 @@ def setup_sheet_mocks(monkeypatch):
                             {'properties': {'title': 'May 2025', 'sheetId': 2}},
                             {'properties': {'title': 'AllData', 'sheetId': 3}},
                             {'properties': {'title': 'Summary', 'sheetId': 4}},
+                            {'properties': {'title': 'Charts', 'sheetId': 5}},
                         ]
                     }
                 else:

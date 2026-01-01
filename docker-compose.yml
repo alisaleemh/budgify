@@ -1,0 +1,13 @@
+version: "3.9"
+services:
+  budgify-ui:
+    build: .
+    container_name: budgify-ui
+    ports:
+      - "8000:8000"
+    volumes:
+      - ${HOME}/Documents/Statements:/statements:ro
+      - ./appdata:/appdata
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

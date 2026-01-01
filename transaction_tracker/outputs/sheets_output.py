@@ -163,15 +163,29 @@ class SheetsOutput(BaseOutput):
         # Fetch metadata once for sheet ids
         meta = self.sheets_srv.spreadsheets().get(
             spreadsheetId=sh.id,
-            fields='sheets.properties'
+            fields='sheets(properties,tables)'
         ).execute()['sheets']
         id_map = {s['properties']['title']: s['properties']['sheetId'] for s in meta}
+        sheet_meta = {s['properties']['title']: s for s in meta}
 
         # Build requests for monthly tabs
         for title, rows in month_rows.items():
             sheet_id = id_map[title]
+            table_range = {
+                'sheetId': sheet_id,
+                'startRowIndex': 0,
+                'endRowIndex': len(rows),
+                'startColumnIndex': 0,
+                'endColumnIndex': len(rows[0])
+            }
             batch_requests.extend(
-                self._table_and_sort_requests(sheet_id, len(rows), len(rows[0]), amount_col_index=4)
+                self._table_and_sort_requests(
+                    sheet_id,
+                    len(rows),
+                    len(rows[0]),
+                    amount_col_index=4,
+                    apply_filter=not self._sheet_has_table_overlap(sheet_meta[title], table_range)
+                )
             )
             batch_requests.append(
                 self._month_pivot_request(sheet_id, len(rows))
@@ -182,8 +196,21 @@ class SheetsOutput(BaseOutput):
 
         # Requests for AllData tab
         all_sheet_id = id_map[self.ALL_DATA]
+        all_table_range = {
+            'sheetId': all_sheet_id,
+            'startRowIndex': 0,
+            'endRowIndex': len(all_rows),
+            'startColumnIndex': 0,
+            'endColumnIndex': len(all_rows[0])
+        }
         batch_requests.extend(
-            self._table_and_sort_requests(all_sheet_id, len(all_rows), len(all_rows[0]), amount_col_index=5)
+            self._table_and_sort_requests(
+                all_sheet_id,
+                len(all_rows),
+                len(all_rows[0]),
+                amount_col_index=5,
+                apply_filter=not self._sheet_has_table_overlap(sheet_meta[self.ALL_DATA], all_table_range)
+            )
         )
         batch_requests.extend(
             self._formatting_requests(all_sheet_id, len(all_rows[0]), amount_col_index=5, tab_rgb=(0.9,0.9,0.9))
@@ -268,11 +295,12 @@ class SheetsOutput(BaseOutput):
 
         print(f"Built tabs for {len(months)} months, AllData, Summary, and reordered tabs in '{ss_title}'.")
 
-    def _table_and_sort_requests(self, sheet_id, row_count, column_count, amount_col_index):
+    def _table_and_sort_requests(self, sheet_id, row_count, column_count, amount_col_index, apply_filter=True):
         if row_count <= 1 or column_count == 0:
             return []
-        return [
-            {
+        requests = []
+        if apply_filter:
+            requests.append({
                 'setBasicFilter': {
                     'filter': {
                         'range': {
@@ -284,23 +312,49 @@ class SheetsOutput(BaseOutput):
                         }
                     }
                 }
-            },
-            {
-                'sortRange': {
-                    'range': {
-                        'sheetId': sheet_id,
-                        'startRowIndex': 1,
-                        'endRowIndex': row_count,
-                        'startColumnIndex': 0,
-                        'endColumnIndex': column_count
-                    },
-                    'sortSpecs': [{
-                        'dimensionIndex': amount_col_index,
-                        'sortOrder': 'DESCENDING'
-                    }]
-                }
+            })
+        requests.append({
+            'sortRange': {
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': 1,
+                    'endRowIndex': row_count,
+                    'startColumnIndex': 0,
+                    'endColumnIndex': column_count
+                },
+                'sortSpecs': [{
+                    'dimensionIndex': amount_col_index,
+                    'sortOrder': 'DESCENDING'
+                }]
             }
-        ]
+        })
+        return requests
+
+    def _sheet_has_table_overlap(self, sheet_meta, target_range):
+        for table in sheet_meta.get('tables', []):
+            table_range = table.get('tableRange') or table.get('range')
+            if not table_range:
+                continue
+            if self._ranges_overlap(table_range, target_range):
+                return True
+        return False
+
+    def _ranges_overlap(self, left_range, right_range):
+        left = (
+            left_range.get('startRowIndex', 0),
+            left_range.get('endRowIndex', 0),
+            left_range.get('startColumnIndex', 0),
+            left_range.get('endColumnIndex', 0)
+        )
+        right = (
+            right_range.get('startRowIndex', 0),
+            right_range.get('endRowIndex', 0),
+            right_range.get('startColumnIndex', 0),
+            right_range.get('endColumnIndex', 0)
+        )
+        rows_overlap = left[0] < right[1] and right[0] < left[1]
+        cols_overlap = left[2] < right[3] and right[2] < left[3]
+        return rows_overlap and cols_overlap
 
     def _get_tab(self, sh, title, created_ss, rows='100', cols='10'):
         try:

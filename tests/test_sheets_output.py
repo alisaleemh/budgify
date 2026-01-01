@@ -29,6 +29,47 @@ def test_table_and_sort_requests_alldata():
     assert reqs[1]['sortRange']['range']['sheetId'] == 2
 
 
+def test_table_and_sort_requests_skip_filter_when_disabled():
+    rows = [
+        ['month', 'date', 'description', 'merchant', 'category', 'amount'],
+        ['Jan', '2024-01-01', 'Desc', 'Merc', 'Cat', 20.0],
+    ]
+    out = object.__new__(SheetsOutput)
+    reqs = out._table_and_sort_requests(
+        sheet_id=2,
+        row_count=len(rows),
+        column_count=len(rows[0]),
+        amount_col_index=5,
+        apply_filter=False
+    )
+    assert all('setBasicFilter' not in req for req in reqs)
+    assert any('sortRange' in req for req in reqs)
+
+
+def test_sheet_has_table_overlap_detects_intersection():
+    out = object.__new__(SheetsOutput)
+    sheet_meta = {
+        'tables': [{
+            'tableRange': {
+                'startRowIndex': 0,
+                'endRowIndex': 10,
+                'startColumnIndex': 0,
+                'endColumnIndex': 5
+            }
+        }]
+    }
+    target_range = {
+        'startRowIndex': 5,
+        'endRowIndex': 12,
+        'startColumnIndex': 1,
+        'endColumnIndex': 4
+    }
+    assert out._sheet_has_table_overlap(sheet_meta, target_range) is True
+    target_range['startRowIndex'] = 12
+    target_range['endRowIndex'] = 15
+    assert out._sheet_has_table_overlap(sheet_meta, target_range) is False
+
+
 def test_build_chart_tables_orders_and_aggregates():
     out = object.__new__(SheetsOutput)
     all_rows = [

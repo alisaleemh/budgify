@@ -313,14 +313,14 @@ def setup_sheet_mocks(monkeypatch):
                 fields = k.get('fields', '')
                 if 'parents' in fields:
                     data = {'parents': []}
-                elif 'sheets.properties' in fields:
+                elif 'sheets.properties' in fields or 'sheets(properties' in fields:
                     data = {
                         'sheets': [
-                            {'properties': {'title': 'Sheet1', 'sheetId': 1}},
-                            {'properties': {'title': 'May 2025', 'sheetId': 2}},
-                            {'properties': {'title': 'AllData', 'sheetId': 3}},
-                            {'properties': {'title': 'Summary', 'sheetId': 4}},
-                            {'properties': {'title': 'Charts', 'sheetId': 5}},
+                            {'properties': {'title': 'Sheet1', 'sheetId': 1}, 'tables': []},
+                            {'properties': {'title': 'May 2025', 'sheetId': 2}, 'tables': []},
+                            {'properties': {'title': 'AllData', 'sheetId': 3}, 'tables': []},
+                            {'properties': {'title': 'Summary', 'sheetId': 4}, 'tables': []},
+                            {'properties': {'title': 'Charts', 'sheetId': 5}, 'tables': []},
                         ]
                     }
                 else:

@@ -26,6 +26,19 @@ def _init_db(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _connect_db(db_path: str | Path) -> sqlite3.Connection:
+    path_str = str(db_path)
+    if path_str == ":memory:" or path_str.startswith("file:"):
+        conn = sqlite3.connect(path_str)
+        _init_db(conn)
+        return conn
+    path = Path(path_str)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    _init_db(conn)
+    return conn
+
+
 def append_transactions(
     transactions: Iterable[Transaction],
     db_path: str,
@@ -45,9 +58,7 @@ def append_transactions(
     if not transactions:
         return
 
-    path = Path(db_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = _connect_db(db_path)
     try:
         _init_db(conn)
         cat_map = categories or {}
@@ -81,6 +92,7 @@ def fetch_transactions(
     start_date: date | None = None,
     end_date: date | None = None,
     category: str | None = None,
+    exclude_category: str | None = None,
     merchant_regex: str | None = None,
 ) -> List[Transaction]:
     """Retrieve transactions from a SQLite database.
@@ -98,7 +110,7 @@ def fetch_transactions(
     merchant_regex:
         Optional regular expression to match merchant names.
     """
-    conn = sqlite3.connect(db_path)
+    conn = _connect_db(db_path)
     try:
         query = (
             "SELECT date, description, merchant, amount, category FROM transactions"
@@ -114,6 +126,9 @@ def fetch_transactions(
         if category:
             conditions.append("category = ?")
             params.append(category)
+        if exclude_category:
+            conditions.append("LOWER(TRIM(COALESCE(category, ''))) != ?")
+            params.append(exclude_category.strip().lower())
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY date"
@@ -140,6 +155,7 @@ def _build_filters(
     start_date: date | None,
     end_date: date | None,
     category: str | None,
+    exclude_category: str | None = None,
 ) -> tuple[str, list[str]]:
     conditions: list[str] = []
     params: list[str] = []
@@ -152,6 +168,45 @@ def _build_filters(
     if category:
         conditions.append("category = ?")
         params.append(category)
+    if exclude_category:
+        conditions.append("LOWER(TRIM(COALESCE(category, ''))) != ?")
+        params.append(exclude_category.strip().lower())
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    return where, params
+
+
+def _build_conditions(
+    start_date: date | None,
+    end_date: date | None,
+    category: str | None,
+    exclude_category: str | None,
+    merchant: str | None,
+    min_amount: float | None,
+    max_amount: float | None,
+) -> tuple[str, list[object]]:
+    conditions: list[str] = []
+    params: list[object] = []
+    if start_date:
+        conditions.append("date >= ?")
+        params.append(start_date.isoformat())
+    if end_date:
+        conditions.append("date <= ?")
+        params.append(end_date.isoformat())
+    if category:
+        conditions.append("category = ?")
+        params.append(category)
+    if exclude_category:
+        conditions.append("LOWER(TRIM(COALESCE(category, ''))) != ?")
+        params.append(exclude_category.strip().lower())
+    if merchant:
+        conditions.append("merchant LIKE ?")
+        params.append(f"%{merchant}%")
+    if min_amount is not None:
+        conditions.append("amount >= ?")
+        params.append(float(min_amount))
+    if max_amount is not None:
+        conditions.append("amount <= ?")
+        params.append(float(max_amount))
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     return where, params
 
@@ -160,12 +215,13 @@ def summarize_by_category(
     db_path: str,
     start_date: date | None = None,
     end_date: date | None = None,
+    exclude_category: str | None = None,
 ) -> List[Dict[str, object]]:
     """Aggregate spend totals grouped by category."""
 
-    conn = sqlite3.connect(db_path)
+    conn = _connect_db(db_path)
     try:
-        where, params = _build_filters(start_date, end_date, None)
+        where, params = _build_filters(start_date, end_date, None, exclude_category=exclude_category)
         rows = conn.execute(
             f"""
             SELECT COALESCE(category, 'uncategorized') AS category,
@@ -206,13 +262,14 @@ def summarize_by_period(
     start_date: date | None = None,
     end_date: date | None = None,
     category: str | None = None,
+    exclude_category: str | None = None,
 ) -> List[Dict[str, object]]:
     """Aggregate spend totals grouped by a given time period."""
 
     expr = _PERIOD_EXPRESSIONS[period]
-    conn = sqlite3.connect(db_path)
+    conn = _connect_db(db_path)
     try:
-        where, params = _build_filters(start_date, end_date, category)
+        where, params = _build_filters(start_date, end_date, category, exclude_category=exclude_category)
         rows = conn.execute(
             f"""
             SELECT {expr} AS period,
@@ -242,12 +299,13 @@ def summarize_by_merchant(
     start_date: date | None = None,
     end_date: date | None = None,
     category: str | None = None,
+    exclude_category: str | None = None,
 ) -> List[Dict[str, object]]:
     """Aggregate spend totals grouped by merchant."""
 
-    conn = sqlite3.connect(db_path)
+    conn = _connect_db(db_path)
     try:
-        where, params = _build_filters(start_date, end_date, category)
+        where, params = _build_filters(start_date, end_date, category, exclude_category=exclude_category)
         rows = conn.execute(
             f"""
             SELECT merchant,
@@ -275,7 +333,7 @@ def summarize_by_merchant(
 def list_unique_merchants(db_path: str) -> List[Dict[str, object]]:
     """Return merchants and the categories they appear in."""
 
-    conn = sqlite3.connect(db_path)
+    conn = _connect_db(db_path)
     try:
         rows = conn.execute(
             """
@@ -300,6 +358,189 @@ def list_unique_merchants(db_path: str) -> List[Dict[str, object]]:
     ]
 
 
+def list_categories(db_path: str) -> List[str]:
+    """Return unique transaction categories."""
+
+    conn = _connect_db(db_path)
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT COALESCE(category, 'uncategorized') AS category
+            FROM transactions
+            ORDER BY category
+            """
+        ).fetchall()
+        return [row[0] for row in rows if row[0]]
+    finally:
+        conn.close()
+
+
+def query_transactions(
+    db_path: str,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    category: str | None = None,
+    exclude_category: str | None = None,
+    merchant: str | None = None,
+    merchant_regex: str | None = None,
+    min_amount: float | None = None,
+    max_amount: float | None = None,
+    sort_by: Literal["date", "amount", "merchant", "category", "description"] = "date",
+    sort_dir: Literal["asc", "desc"] = "asc",
+    group_by: Literal["date", "amount", "merchant", "category", "description"] | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> List[Dict[str, object]]:
+    """Query transactions with optional filters and paging."""
+
+    limit = max(1, min(int(limit), 1000))
+    offset = max(0, int(offset))
+    sort_columns = {
+        "date": "date",
+        "amount": "amount",
+        "merchant": "merchant",
+        "category": "category",
+        "description": "description",
+    }
+    sort_column = sort_columns.get(sort_by, "date")
+    group_column = sort_columns.get(group_by or "", "")
+    direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
+    if group_column and group_column == sort_column:
+        group_column = ""
+
+    where, params = _build_conditions(
+        start_date=start_date,
+        end_date=end_date,
+        category=category,
+        exclude_category=exclude_category,
+        merchant=merchant,
+        min_amount=min_amount,
+        max_amount=max_amount,
+    )
+
+    conn = _connect_db(db_path)
+    try:
+        if merchant_regex:
+            order_clause = f"ORDER BY {sort_column} {direction}"
+            if group_column:
+                order_clause = f"ORDER BY {group_column} ASC, {sort_column} {direction}"
+            rows = conn.execute(
+                f"""
+                SELECT date, description, merchant, amount, category
+                FROM transactions
+                {where}
+                {order_clause}
+                """,
+                params,
+            ).fetchall()
+        else:
+            order_clause = f"ORDER BY {sort_column} {direction}"
+            if group_column:
+                order_clause = f"ORDER BY {group_column} ASC, {sort_column} {direction}"
+            rows = conn.execute(
+                f"""
+                SELECT date, description, merchant, amount, category
+                FROM transactions
+                {where}
+                {order_clause}
+                LIMIT ? OFFSET ?
+                """,
+                params + [limit, offset],
+            ).fetchall()
+    finally:
+        conn.close()
+
+    txs = [
+        {
+            "date": row[0],
+            "description": row[1],
+            "merchant": row[2],
+            "amount": float(row[3]),
+            "category": row[4],
+        }
+        for row in rows
+    ]
+    if merchant_regex:
+        pattern = re.compile(merchant_regex, re.IGNORECASE)
+        txs = [t for t in txs if pattern.search(t["merchant"] or "")]
+        txs = txs[offset: offset + limit]
+    return txs
+
+
+def overview_metrics(
+    db_path: str,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    category: str | None = None,
+    exclude_category: str | None = None,
+    merchant: str | None = None,
+    min_amount: float | None = None,
+    max_amount: float | None = None,
+    merchant_regex: str | None = None,
+) -> Dict[str, object]:
+    """Return aggregate metrics for the filtered dataset."""
+
+    where, params = _build_conditions(
+        start_date=start_date,
+        end_date=end_date,
+        category=category,
+        exclude_category=exclude_category,
+        merchant=merchant,
+        min_amount=min_amount,
+        max_amount=max_amount,
+    )
+    conn = _connect_db(db_path)
+    try:
+        if merchant_regex:
+            rows = conn.execute(
+                f"""
+                SELECT date, amount, merchant
+                FROM transactions
+                {where}
+                """,
+                params,
+            ).fetchall()
+        else:
+            row = conn.execute(
+                f"""
+                SELECT COUNT(*) AS count,
+                       COALESCE(SUM(amount), 0.0) AS total,
+                       COALESCE(AVG(amount), 0.0) AS average,
+                       MIN(date) AS first_date,
+                       MAX(date) AS last_date
+                FROM transactions
+                {where}
+                """,
+                params,
+            ).fetchone()
+    finally:
+        conn.close()
+
+    if not merchant_regex:
+        return {
+            "transactions": int(row[0] or 0),
+            "total": float(row[1] or 0.0),
+            "average": float(row[2] or 0.0),
+            "first_date": row[3],
+            "last_date": row[4],
+        }
+
+    pattern = re.compile(merchant_regex, re.IGNORECASE)
+    matches = [r for r in rows if pattern.search(r[2] or "")]
+    totals = [float(r[1]) for r in matches]
+    dates = [r[0] for r in matches]
+    total = sum(totals)
+    count = len(totals)
+    average = total / count if count else 0.0
+    return {
+        "transactions": count,
+        "total": float(total),
+        "average": float(average),
+        "first_date": min(dates) if dates else None,
+        "last_date": max(dates) if dates else None,
+    }
+
+
 def category_insights(
     db_path: str,
     category: str,
@@ -321,7 +562,7 @@ def category_insights(
     if not category:
         raise ValueError("category must be provided for category_insights")
 
-    conn = sqlite3.connect(db_path)
+    conn = _connect_db(db_path)
     try:
         where, params = _build_filters(start_date, end_date, category)
         params_list = list(params)

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Budgify Studio</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <div class="bg-orbit"></div>
+    <div class="bg-orbit bg-orbit--alt"></div>
+
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Budgify Studio</p>
+        <h1>Spend intelligence, live from your ledger.</h1>
+        <p class="lede">
+          Explore monthly trends, category mix, and top merchants with a UI
+          designed to drill down fast. Every filter updates the dashboard in real time.
+        </p>
+      </div>
+      <div class="hero-card">
+        <div class="hero-card__stat">
+          <span class="label">Database</span>
+          <span id="db-path" class="value">budgify.db</span>
+        </div>
+        <div class="hero-card__stat">
+          <span class="label">Last sync</span>
+          <span id="last-sync" class="value">Ready</span>
+        </div>
+        <div class="hero-card__actions">
+          <button id="refresh-all" class="btn btn--primary">Refresh now</button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel panel--filters">
+        <div class="panel__header">
+          <h2>Query filters</h2>
+          <div class="panel__header-actions">
+            <span class="panel__hint">Auto-updating</span>
+            <button id="toggle-advanced" class="btn btn--ghost" aria-expanded="false">
+              Advanced filters
+            </button>
+            <button id="reset-filters" class="btn btn--ghost">Reset</button>
+          </div>
+        </div>
+        <div class="filters filters--primary">
+          <label>
+            <span>Quick range</span>
+            <div id="date-range" class="range-group" role="group" aria-label="Quick range">
+              <div class="range-group__section" data-range-section="quick">
+                <span class="range-group__label">Quick picks</span>
+                <div class="range-group__buttons"></div>
+              </div>
+              <div class="range-group__section" data-range-section="months">
+                <span class="range-group__label">Last 12 months</span>
+                <div class="range-group__buttons"></div>
+              </div>
+            </div>
+          </label>
+          <label>
+            <span>Category</span>
+            <div id="category-select" class="range-group" role="group" aria-label="Category filter">
+              <div class="range-group__section" data-range-section="categories">
+                <div class="range-group__buttons"></div>
+              </div>
+            </div>
+          </label>
+        </div>
+        <div id="advanced-filters" class="filters filters--advanced">
+          <label>
+            <span>Start date</span>
+            <input type="date" id="start-date" />
+          </label>
+          <label>
+            <span>End date</span>
+            <input type="date" id="end-date" />
+          </label>
+          <label>
+            <span>Merchant</span>
+            <input type="text" id="merchant-input" placeholder="Search merchant name" />
+          </label>
+          <label>
+            <span>Min amount</span>
+            <input type="number" id="min-amount" step="0.01" placeholder="0.00" />
+          </label>
+          <label>
+            <span>Max amount</span>
+            <input type="number" id="max-amount" step="0.01" placeholder="0.00" />
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="merchant-regex" />
+            <span>Regex search</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="include-house" />
+            <span>Include house category</span>
+          </label>
+          <label>
+            <span>Period view</span>
+            <select id="period-select">
+              <option value="month">Month</option>
+              <option value="quarter">Quarter</option>
+              <option value="year">Year</option>
+            </select>
+          </label>
+          <label>
+            <span>Sort by</span>
+            <select id="sort-by">
+              <option value="date">Date</option>
+              <option value="amount" selected>Amount</option>
+              <option value="merchant">Merchant</option>
+              <option value="category">Category</option>
+              <option value="description">Description</option>
+            </select>
+          </label>
+          <label>
+            <span>Direction</span>
+            <select id="sort-dir">
+              <option value="desc">Desc</option>
+              <option value="asc">Asc</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="summary-grid">
+        <article class="card reveal">
+          <p>Total spend</p>
+          <h3 id="total-spend">$0.00</h3>
+          <span id="spend-period" class="muted">No range selected</span>
+        </article>
+        <article class="card reveal">
+          <p>Transactions</p>
+          <h3 id="tx-count">0</h3>
+          <span id="tx-average" class="muted">Avg $0.00</span>
+        </article>
+        <article class="card reveal">
+          <p>Most active category</p>
+          <h3 id="top-category">-</h3>
+          <span id="top-category-total" class="muted">$0.00</span>
+        </article>
+        <article class="card reveal">
+          <p>Top merchant</p>
+          <h3 id="top-merchant">-</h3>
+          <span id="top-merchant-total" class="muted">$0.00</span>
+        </article>
+      </section>
+
+      <section class="chart-grid">
+        <div class="chart-grid__controls">
+          <button id="expand-all" class="btn btn--ghost btn--small" type="button">Expand all</button>
+          <button id="collapse-all" class="btn btn--ghost btn--small" type="button">Collapse all</button>
+        </div>
+        <article class="chart-card reveal">
+          <div class="chart-card__header">
+            <h2>All-time category spend</h2>
+            <div class="chart-card__actions">
+              <span class="muted">Static totals</span>
+              <button class="btn btn--ghost btn--small chart-expand" type="button">Expand</button>
+            </div>
+          </div>
+          <canvas id="category-alltime-chart"></canvas>
+        </article>
+        <article class="chart-card reveal">
+          <div class="chart-card__header">
+            <h2>Spend over time</h2>
+            <div class="chart-card__actions">
+              <span id="period-label" class="muted">Monthly view</span>
+              <button class="btn btn--ghost btn--small chart-expand" type="button">Expand</button>
+            </div>
+          </div>
+          <canvas id="period-chart"></canvas>
+        </article>
+        <article class="chart-card reveal">
+          <div class="chart-card__header">
+            <h2>Category mix</h2>
+            <div class="chart-card__actions">
+              <span class="muted">Top categories by total</span>
+              <button class="btn btn--ghost btn--small chart-expand" type="button">Expand</button>
+            </div>
+          </div>
+          <canvas id="category-chart"></canvas>
+        </article>
+      </section>
+
+      <section class="panel panel--table">
+        <div class="panel__header">
+          <h2>Transactions</h2>
+          <div class="panel__header-actions">
+            <span id="tx-total" class="panel__hint">Transactions: 0</span>
+            <label class="table-size">
+              <span>Page size</span>
+              <select id="page-size">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+              </select>
+            </label>
+            <div class="table-pagination">
+              <button id="page-prev" class="btn btn--ghost btn--small" type="button">Prev</button>
+              <span id="page-status" class="panel__hint">Page 1</span>
+              <button id="page-next" class="btn btn--ghost btn--small" type="button">Next</button>
+            </div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="right">#</th>
+                <th data-sort="date">Date</th>
+                <th data-sort="merchant">Merchant</th>
+                <th data-sort="description">Description</th>
+                <th data-sort="category">Category</th>
+                <th class="right" data-sort="amount">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="tx-table"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <div id="tooltip" class="tooltip"></div>
+  </body>
+</html>

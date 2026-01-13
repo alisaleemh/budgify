@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  web:
+    build: .
+    command: ["budgify-web", "--db", "/data/budgify.db", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - budgify-data:/data
+      - ./config.yaml:/app/config.yaml:ro
+
+  sync:
+    build: .
+    command: ["python", "scripts/watch_statements.py"]
+    environment:
+      STATEMENTS_DIR: /statements
+      DB_PATH: /data/budgify.db
+      CONFIG_PATH: /app/config.yaml
+      OUTPUT_FORMAT: ${OUTPUT_FORMAT:-csv}
+      POLL_SECONDS: ${POLL_SECONDS:-10}
+    volumes:
+      - budgify-data:/data
+      - ${STATEMENTS_HOST_DIR:-./statements}:/statements:ro
+      - ${CONFIG_PATH:-./config.yaml}:/app/config.yaml:ro
+
+volumes:
+  budgify-data:

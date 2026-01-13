@@ -1,0 +1,1 @@
+recursive-include transaction_tracker/web_ui *

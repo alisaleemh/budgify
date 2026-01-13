@@ -9,6 +9,8 @@ setup(
     author_email="you@example.com",
     url="https://github.com/yourusername/budgify",
     packages=find_packages(),
+    include_package_data=True,
+    package_data={"transaction_tracker": ["web_ui/*"]},
     python_requires=">=3.7",
     install_requires=[
         "click>=7.0",
@@ -29,6 +31,7 @@ setup(
         "console_scripts": [
             "budgify=transaction_tracker.cli:main",
             "budgify-mcp=transaction_tracker.mcp_server:main",
+            "budgify-web=transaction_tracker.web:main",
         ],
     },
     classifiers=[

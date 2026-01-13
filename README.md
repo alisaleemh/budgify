@@ -129,6 +129,49 @@ pip install dist/budgify-<version>-py3-none-any.whl
 
 ## Usage
 
+### Docker Compose (auto-sync + web UI)
+
+1) Copy the example config and update paths for Docker:
+
+```bash
+cp examples/config.example.yaml config.yaml
+```
+
+Update `config.yaml` with at least:
+
+```yaml
+output_dir: "/data"
+db_path: "/data/budgify.db"
+```
+
+2) Create a local statements directory and drop statement files there:
+
+```bash
+mkdir -p statements
+```
+
+3) Start everything:
+
+```bash
+docker-compose up --build
+```
+
+The sync service polls the `statements/` folder and re-imports whenever files
+change. The web UI runs on `http://127.0.0.1:8000`.
+
+Optional overrides (env vars):
+
+- `STATEMENTS_HOST_DIR` (default `./statements`)
+- `CONFIG_PATH` (default `./config.yaml`)
+- `OUTPUT_FORMAT` (default `csv`)
+- `POLL_SECONDS` (default `10`)
+
+Example:
+
+```bash
+STATEMENTS_HOST_DIR=/path/to/statements CONFIG_PATH=/path/to/config.yaml docker-compose up --build
+```
+
 ### CSV Export
 
 ```bash
@@ -154,6 +197,20 @@ Generates a local `Budget2025.xlsx` workbook with monthly tabs (sorted from
 largest to smallest transaction), an `AllData` tab, a `Summary` sheet that
 aggregates totals by month and category without using Excel PivotTables, and a
 `Charts` sheet with monthly/category visuals.
+
+### Web Dashboard
+
+```bash
+# First store transactions in SQLite
+budgify --dir ~/Downloads/statements --output csv --db mydata.db
+
+# Then launch the web UI
+budgify-web --db mydata.db --port 8000
+```
+
+Open `http://127.0.0.1:8000` to explore interactive dashboards: monthly spend,
+category mix, top merchants, and a queryable transaction table driven directly
+from the SQLite database.
 
 ### Manual Transactions
 

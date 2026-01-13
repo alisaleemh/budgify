@@ -44,7 +44,7 @@ categories:
   fuel: []
   # etc.
 
-data_dir: "./data"
+output_dir: "./data"
 db_path: "budgify.db"
 
 google:

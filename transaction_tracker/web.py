@@ -153,13 +153,11 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
         _json_response(self, {"error": "not found"}, status=404)
 
     def _handle_static(self, raw_path: str) -> None:
+        static_root = Path(self.static_dir).resolve()
         path = raw_path or "/"
         if path == "/":
             path = "/index.html"
-        resolved = (self.static_dir / unquote(path.lstrip("/"))).resolve()
-        if self.static_dir not in resolved.parents and resolved != self.static_dir:
-            self.send_error(404)
-            return
+        resolved = (static_root / unquote(path.lstrip("/"))).resolve()
         if not resolved.exists() or not resolved.is_file():
             self.send_error(404)
             return

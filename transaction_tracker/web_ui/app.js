@@ -549,9 +549,6 @@ function refreshTransactions(append = false) {
   const params = buildParams();
   params.set("sort_by", els.sortBy.value);
   params.set("sort_dir", els.sortDir.value);
-  if (els.sortBy.value === "amount") {
-    params.set("group_by", "category");
-  }
   params.set("limit", state.pageSize);
   params.set("offset", (state.page - 1) * state.pageSize);
   return fetchJSON(`/api/transactions?${params}`).then((rows) => {

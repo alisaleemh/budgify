@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  grpc:
+    build:
+      context: ../..
+      dockerfile: examples/grpc_mcp_demo/Dockerfile
+    command: ["python", "examples/grpc_mcp_demo/grpc_server.py"]
+    ports:
+      - "50051:50051"
+
+  mcp:
+    build:
+      context: ../..
+      dockerfile: examples/grpc_mcp_demo/Dockerfile
+    command: ["python", "examples/grpc_mcp_demo/mcp_server.py"]
+    depends_on:
+      - grpc
+    environment:
+      GRPC_TARGET: grpc:50051
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8765
+      MCP_TRANSPORT: sse
+    ports:
+      - "8765:8765"

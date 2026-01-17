@@ -1,10 +1,13 @@
-import anyio
 from datetime import date
+
+import anyio
+import pytest
 
 from transaction_tracker.core.models import Transaction
 from transaction_tracker.database import append_transactions
 from transaction_tracker.mcp_server import (
     analyze_category_spend,
+    compare_spend_between_periods_tool,
     get_categories,
     list_unique_merchants_tool,
     summarize_spend_by_category,
@@ -140,3 +143,42 @@ def test_analyze_category_spend(tmp_path):
     opp_types = {item["type"] for item in result["optimization_opportunities"]}
     assert "merchant_concentration" in opp_types
     assert "recent_spike" in opp_types
+
+
+def test_compare_spend_between_periods(tmp_path):
+    db_path = _setup_db(tmp_path)
+
+    async def run():
+        return await compare_spend_between_periods_tool(
+            str(db_path),
+            first_start="2025-01-01",
+            first_end="2025-01-31",
+            second_start="2025-02-01",
+            second_end="2025-02-28",
+            category="groceries",
+        )
+
+    result = anyio.run(run)
+    assert result["category"] == "groceries"
+    assert result["first_period"]["total"] == 10.0
+    assert result["second_period"]["total"] == 30.0
+    assert result["difference"] == 20.0
+    assert result["percent_change"] == 2.0
+    assert result["first_period"]["transactions"] == 1
+
+    async def run_all():
+        return await compare_spend_between_periods_tool(
+            str(db_path),
+            first_start="2025-01-01",
+            first_end="2025-01-31",
+            second_start="2025-02-01",
+            second_end="2025-02-28",
+        )
+
+    overall = anyio.run(run_all)
+    assert overall["category"] is None
+    assert overall["first_period"]["total"] == 30.0
+    assert overall["second_period"]["total"] == 55.0
+    assert overall["difference"] == 25.0
+    assert overall["percent_change"] == pytest.approx(25.0 / 30.0)
+    assert overall["first_period"]["transactions"] == 2

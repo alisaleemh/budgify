@@ -3,6 +3,7 @@ version: "3.9"
 services:
   web:
     build: .
+    restart: unless-stopped
     command: ["budgify-web", "--db", "/data/budgify.db", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
@@ -12,6 +13,7 @@ services:
 
   sync:
     build: .
+    restart: unless-stopped
     command: ["python", "scripts/watch_statements.py"]
     environment:
       STATEMENTS_DIR: /statements

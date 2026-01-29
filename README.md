@@ -165,12 +165,33 @@ Optional overrides (env vars):
 - `CONFIG_PATH` (default `./config.yaml`)
 - `OUTPUT_FORMAT` (default `csv`)
 - `POLL_SECONDS` (default `10`)
+- `BUDGIFY_PASSWORD_KEY` (required when password protection is enabled)
 
 Example:
 
 ```bash
 STATEMENTS_HOST_DIR=/path/to/statements CONFIG_PATH=/path/to/config.yaml docker-compose up --build
 ```
+
+Password protection (web UI):
+
+1) Create an encrypted password file:
+
+```bash
+python - <<'PY'
+from transaction_tracker.web import _encode_password
+print(_encode_password("your-password", "Altaf Hussain"))
+PY
+```
+
+2) Save the output to `password.txt` (same directory as `docker-compose.yml`).
+3) Start the stack with the key:
+
+```bash
+BUDGIFY_PASSWORD_KEY="Altaf Hussain" docker-compose up --build
+```
+
+The browser will prompt for Basic Auth.
 
 ### CSV Export
 

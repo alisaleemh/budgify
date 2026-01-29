@@ -5,11 +5,15 @@ services:
     build: .
     restart: unless-stopped
     command: ["budgify-web", "--db", "/data/budgify.db", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      BUDGIFY_PASSWORD_FILE: /app/password.txt
+      BUDGIFY_PASSWORD_KEY: ${BUDGIFY_PASSWORD_KEY:?Set BUDGIFY_PASSWORD_KEY}
     ports:
       - "8000:8000"
     volumes:
       - budgify-data:/data
       - ./config.yaml:/app/config.yaml:ro
+      - ./password.txt:/app/password.txt:ro
 
   sync:
     build: .

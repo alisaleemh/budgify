@@ -19,11 +19,11 @@ def _seed_transactions(db_path):
         "house": ["Home"],
     }
     txs = [
-        Transaction(date=date(2025, 1, 5), description="Grocery run", merchant="Fresh Market", amount=45.5),
-        Transaction(date=date(2025, 1, 20), description="Cafe visit", merchant="Bean House", amount=12.0),
-        Transaction(date=date(2025, 2, 1), description="Fuel", merchant="Shell", amount=60.0),
-        Transaction(date=date(2025, 2, 10), description="Streaming", merchant="StreamFlix", amount=15.0),
-        Transaction(date=date(2025, 2, 12), description="Home repair", merchant="Home Depot", amount=210.0),
+        Transaction(date=date(2025, 1, 5), description="Grocery run", merchant="Fresh Market", amount=45.5, provider="amex"),
+        Transaction(date=date(2025, 1, 20), description="Cafe visit", merchant="Bean House", amount=12.0, provider="amex"),
+        Transaction(date=date(2025, 2, 1), description="Fuel", merchant="Shell", amount=60.0, provider="tdvisa"),
+        Transaction(date=date(2025, 2, 10), description="Streaming", merchant="StreamFlix", amount=15.0, provider="recurring"),
+        Transaction(date=date(2025, 2, 12), description="Home repair", merchant="Home Depot", amount=210.0, provider="manual"),
     ]
     append_transactions(txs, str(db_path), categories)
 
@@ -52,6 +52,10 @@ def test_query_transactions_filters_and_sorting(tmp_path):
     regex = query_transactions(str(db_path), merchant_regex="bean|shell", sort_by="date", sort_dir="asc")
     assert [tx["merchant"] for tx in regex] == ["Bean House", "Shell"]
 
+    provider_rows = query_transactions(str(db_path), provider="tdvisa")
+    assert len(provider_rows) == 1
+    assert provider_rows[0]["merchant"] == "Shell"
+
     paged = query_transactions(str(db_path), sort_by="date", sort_dir="asc", limit=2, offset=1)
     assert len(paged) == 2
     assert paged[0]["merchant"] == "Bean House"
@@ -74,6 +78,9 @@ def test_overview_metrics_and_categories(tmp_path):
     categories = list_categories(str(db_path))
     assert "groceries" in categories
     assert "restaurants" in categories
+
+    provider_overview = overview_metrics(str(db_path), provider="amex")
+    assert provider_overview["transactions"] == 2
 
 
 def test_exclude_category_filters(tmp_path):

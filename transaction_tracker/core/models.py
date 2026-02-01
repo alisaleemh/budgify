@@ -9,3 +9,4 @@ class Transaction:
     merchant: str
     amount: float
     category: str = None
+    provider: str | None = None

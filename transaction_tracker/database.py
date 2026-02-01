@@ -87,9 +87,12 @@ def append_transactions(
             )
         conn.executemany(
             """
-            INSERT OR IGNORE INTO transactions
+            INSERT INTO transactions
             (date, description, merchant, amount, category, provider)
             VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(date, description, merchant, amount) DO UPDATE SET
+                category=excluded.category,
+                provider=COALESCE(transactions.provider, excluded.provider)
             """,
             rows,
         )

@@ -340,6 +340,31 @@ select {
   font-size: 0.9rem;
 }
 
+.top-categories-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.top-categories-list__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  font-size: 0.9rem;
+}
+
+.top-categories-list__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-categories-list__amount {
+  font-variant-numeric: tabular-nums;
+}
+
 .muted {
   color: var(--muted);
   font-size: 0.85rem;

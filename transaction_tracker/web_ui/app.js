@@ -329,7 +329,13 @@ function updateTopCategories(categories) {
     return;
   }
   els.topCategories.innerHTML = "";
-  const topCategories = (categories || []).slice(0, 5);
+  const normalizedCategories = (categories || []).map((item) => ({
+    category: item.category || "uncategorized",
+    total: Number(item.total) || 0,
+  }));
+  const topCategories = normalizedCategories.slice(0, 5);
+  const totalSpend = normalizedCategories.reduce((sum, item) => sum + item.total, 0);
+  const maxTopCategory = Math.max(...topCategories.map((item) => item.total), 1);
   if (topCategories.length === 0) {
     const emptyItem = document.createElement("li");
     emptyItem.className = "muted";
@@ -338,19 +344,50 @@ function updateTopCategories(categories) {
     return;
   }
 
-  topCategories.forEach((item) => {
+  topCategories.forEach((item, index) => {
+    const relativeWidth = Math.max((item.total / maxTopCategory) * 100, 2);
+    const share = totalSpend > 0 ? (item.total / totalSpend) * 100 : 0;
     const row = document.createElement("li");
     row.className = "top-categories-list__item";
 
+    const rowHeader = document.createElement("div");
+    rowHeader.className = "top-categories-list__row";
+
+    const left = document.createElement("div");
+    left.className = "top-categories-list__left";
+
+    const rank = document.createElement("span");
+    rank.className = "top-categories-list__rank";
+    rank.textContent = String(index + 1);
+
     const name = document.createElement("span");
     name.className = "top-categories-list__name";
-    name.textContent = item.category || "uncategorized";
+    name.textContent = item.category;
+
+    left.append(rank, name);
+
+    const right = document.createElement("div");
+    right.className = "top-categories-list__right";
 
     const amount = document.createElement("span");
     amount.className = "top-categories-list__amount";
     amount.textContent = formatCurrency(item.total);
 
-    row.append(name, amount);
+    const percent = document.createElement("span");
+    percent.className = "top-categories-list__share";
+    percent.textContent = `${share.toFixed(1)}%`;
+
+    right.append(amount, percent);
+    rowHeader.append(left, right);
+
+    const bar = document.createElement("div");
+    bar.className = "top-categories-list__bar";
+
+    const barFill = document.createElement("span");
+    barFill.style.width = `${relativeWidth}%`;
+    bar.appendChild(barFill);
+
+    row.append(rowHeader, bar);
     els.topCategories.appendChild(row);
   });
 }

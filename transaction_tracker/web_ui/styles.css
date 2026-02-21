@@ -340,29 +340,101 @@ select {
   font-size: 0.9rem;
 }
 
+.card--top-categories {
+  grid-column: 1 / -1;
+  padding: 1.35rem 1.5rem;
+  background:
+    radial-gradient(circle at 10% 10%, rgba(44, 122, 123, 0.1), transparent 48%),
+    linear-gradient(125deg, #fffdf9 0%, #fff3e3 100%);
+  border: 1px solid #ebd9c1;
+  gap: 0.75rem;
+}
+
+.top-categories-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.8rem;
+}
+
 .top-categories-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.3rem;
+  gap: 0.55rem;
 }
 
 .top-categories-list__item {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(224, 211, 195, 0.7);
+}
+
+.top-categories-list__row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 0.8rem;
-  font-size: 0.9rem;
+}
+
+.top-categories-list__left,
+.top-categories-list__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.top-categories-list__rank {
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 999px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: #fff;
+  background: linear-gradient(145deg, #2c7a7b, #2a5f62);
 }
 
 .top-categories-list__name {
+  font-size: 0.95rem;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .top-categories-list__amount {
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.top-categories-list__share {
+  font-size: 0.8rem;
+  color: var(--muted);
+  min-width: 3.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.top-categories-list__bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(226, 212, 194, 0.7);
+  overflow: hidden;
+}
+
+.top-categories-list__bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d96d47 0%, #efac60 100%);
+  transition: width 0.35s ease;
 }
 
 .muted {

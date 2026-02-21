@@ -25,3 +25,16 @@ def test_extract_auth_password_bearer():
 def test_extract_auth_password_invalid():
     assert web._extract_auth_password("Basic not-base64!!") is None
     assert web._extract_auth_password("Something else") is None
+
+
+def test_get_categories_prefers_plural_param_and_dedupes():
+    query = {
+        "category": ["groceries"],
+        "categories": ["groceries,restaurants", "restaurants", "  ", "car"],
+    }
+    assert web._get_categories(query) == ["groceries", "restaurants", "car"]
+
+
+def test_get_categories_uses_legacy_category_param():
+    query = {"category": ["groceries", " restaurants ", "groceries"]}
+    assert web._get_categories(query) == ["groceries", "restaurants"]

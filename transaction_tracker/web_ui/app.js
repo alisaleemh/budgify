@@ -8,7 +8,7 @@ const state = {
   pageSize: 50,
   lastQueryKey: "",
   activeRange: "",
-  activeCategory: "",
+  activeCategories: [],
   charts: {
     period: [],
     categoryAllTime: [],
@@ -77,9 +77,11 @@ function buildParams({ includeCategory = true, includeMerchant = true, includeAm
   const params = new URLSearchParams();
   if (els.startDate.value) params.set("start_date", els.startDate.value);
   if (els.endDate.value) params.set("end_date", els.endDate.value);
-  if (includeCategory && state.activeCategory) params.set("category", state.activeCategory);
-  const selectedCategory = (state.activeCategory || "").trim().toLowerCase();
-  if (!els.includeHouse.checked && selectedCategory !== "house") {
+  if (includeCategory && state.activeCategories.length > 0) {
+    params.set("categories", state.activeCategories.join(","));
+  }
+  const hasHouseSelected = state.activeCategories.some((category) => category.trim().toLowerCase() === "house");
+  if (!els.includeHouse.checked && !hasHouseSelected) {
     params.set("exclude_category", "house");
   }
   if (els.provider && els.provider.value) {
@@ -101,7 +103,7 @@ function queryKey() {
   return [
     els.startDate.value,
     els.endDate.value,
-    state.activeCategory,
+    state.activeCategories.slice().sort().join(","),
     els.merchant.value,
     els.provider?.value,
     els.merchantRegex.checked,
@@ -209,7 +211,7 @@ function resetFilters() {
   els.startDate.value = "";
   els.endDate.value = "";
   setActiveRange("");
-  setActiveCategory("");
+  setActiveCategories([]);
   els.merchant.value = "";
   if (els.provider) {
     els.provider.value = "";
@@ -235,14 +237,29 @@ function setActiveRange(value) {
   });
 }
 
-function setActiveCategory(value) {
-  state.activeCategory = value;
+function setActiveCategories(values) {
+  state.activeCategories = Array.from(new Set(values));
   if (!els.category) {
     return;
   }
   els.category.querySelectorAll(".range-button").forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.range === value);
+    const value = button.dataset.range || "";
+    const isAll = value === "";
+    const isActive = isAll ? state.activeCategories.length === 0 : state.activeCategories.includes(value);
+    button.classList.toggle("is-active", isActive);
   });
+}
+
+function toggleActiveCategory(value) {
+  if (!value) {
+    setActiveCategories([]);
+    return;
+  }
+  if (state.activeCategories.includes(value)) {
+    setActiveCategories(state.activeCategories.filter((category) => category !== value));
+    return;
+  }
+  setActiveCategories([...state.activeCategories, value]);
 }
 
 function populateCategories(categories) {
@@ -268,7 +285,7 @@ function populateCategories(categories) {
     button.textContent = cat;
     target.appendChild(button);
   });
-  setActiveCategory("");
+  setActiveCategories([]);
 }
 
 function populateProviders(providers) {
@@ -296,8 +313,8 @@ function updateSummary(overview, categories, merchants) {
     els.spendPeriod.textContent = "No range selected";
   }
 
-  if (state.activeCategory) {
-    els.topCategory.textContent = state.activeCategory;
+  if (state.activeCategories.length === 1) {
+    els.topCategory.textContent = state.activeCategories[0];
     els.topCategoryTotal.textContent = formatCurrency(overview.total);
   } else {
     const topCategory = categories[0];
@@ -599,7 +616,7 @@ function refreshAll(resetOffset = true) {
   }
 
   const periodText = els.period.options[els.period.selectedIndex].text;
-  const categoryText = state.activeCategory ? state.activeCategory : "All categories";
+  const categoryText = formatCategorySelectionLabel();
   els.periodLabel.textContent = `${periodText} view · ${categoryText}`;
   updateSortIndicators();
 
@@ -647,6 +664,16 @@ function loadMetadata() {
     populateCategories(data.categories || []);
     populateProviders(data.providers || []);
   });
+}
+
+function formatCategorySelectionLabel() {
+  if (state.activeCategories.length === 0) {
+    return "All categories";
+  }
+  if (state.activeCategories.length <= 2) {
+    return state.activeCategories.join(", ");
+  }
+  return `${state.activeCategories.length} categories selected`;
 }
 
 function populateDateRanges() {
@@ -765,7 +792,7 @@ function init() {
         return;
       }
       const value = target.dataset.range || "";
-      setActiveCategory(value);
+      toggleActiveCategory(value);
       refreshAll(true);
     });
   }
@@ -863,7 +890,7 @@ function init() {
     populateDateRanges();
     setActiveRange("last_1y");
     applyDateRange("last_1y");
-    setActiveCategory("");
+    setActiveCategories([]);
     updateReveal();
     updateSortIndicators();
     refreshAll(true);

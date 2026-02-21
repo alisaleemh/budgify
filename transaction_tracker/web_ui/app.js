@@ -46,8 +46,7 @@ const els = {
   spendPeriod: document.getElementById("spend-period"),
   txCount: document.getElementById("tx-count"),
   txAverage: document.getElementById("tx-average"),
-  topCategory: document.getElementById("top-category"),
-  topCategoryTotal: document.getElementById("top-category-total"),
+  topCategories: document.getElementById("top-categories"),
   topMerchant: document.getElementById("top-merchant"),
   topMerchantTotal: document.getElementById("top-merchant-total"),
   periodLabel: document.getElementById("period-label"),
@@ -313,19 +312,7 @@ function updateSummary(overview, categories, merchants) {
     els.spendPeriod.textContent = "No range selected";
   }
 
-  if (state.activeCategories.length === 1) {
-    els.topCategory.textContent = state.activeCategories[0];
-    els.topCategoryTotal.textContent = formatCurrency(overview.total);
-  } else {
-    const topCategory = categories[0];
-    if (topCategory) {
-      els.topCategory.textContent = topCategory.category;
-      els.topCategoryTotal.textContent = formatCurrency(topCategory.total);
-    } else {
-      els.topCategory.textContent = "-";
-      els.topCategoryTotal.textContent = formatCurrency(0);
-    }
-  }
+  updateTopCategories(categories);
 
   const topMerchant = merchants[0];
   if (topMerchant) {
@@ -335,6 +322,37 @@ function updateSummary(overview, categories, merchants) {
     els.topMerchant.textContent = "-";
     els.topMerchantTotal.textContent = formatCurrency(0);
   }
+}
+
+function updateTopCategories(categories) {
+  if (!els.topCategories) {
+    return;
+  }
+  els.topCategories.innerHTML = "";
+  const topCategories = (categories || []).slice(0, 5);
+  if (topCategories.length === 0) {
+    const emptyItem = document.createElement("li");
+    emptyItem.className = "muted";
+    emptyItem.textContent = "No category data";
+    els.topCategories.appendChild(emptyItem);
+    return;
+  }
+
+  topCategories.forEach((item) => {
+    const row = document.createElement("li");
+    row.className = "top-categories-list__item";
+
+    const name = document.createElement("span");
+    name.className = "top-categories-list__name";
+    name.textContent = item.category || "uncategorized";
+
+    const amount = document.createElement("span");
+    amount.className = "top-categories-list__amount";
+    amount.textContent = formatCurrency(item.total);
+
+    row.append(name, amount);
+    els.topCategories.appendChild(row);
+  });
 }
 
 function renderTable(rows, append = false) {

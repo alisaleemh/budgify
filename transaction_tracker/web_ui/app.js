@@ -23,6 +23,7 @@ const els = {
   dateRange: document.getElementById("date-range"),
   category: document.getElementById("category-select"),
   merchant: document.getElementById("merchant-input"),
+  provider: document.getElementById("provider-select"),
   minAmount: document.getElementById("min-amount"),
   maxAmount: document.getElementById("max-amount"),
   merchantRegex: document.getElementById("merchant-regex"),
@@ -83,6 +84,9 @@ function buildParams({ includeCategory = true, includeMerchant = true, includeAm
   if (!els.includeHouse.checked && !hasHouseSelected) {
     params.set("exclude_category", "house");
   }
+  if (els.provider && els.provider.value) {
+    params.set("provider", els.provider.value);
+  }
   if (includeMerchant && els.merchant.value) {
     if (els.merchantRegex.checked) {
       params.set("merchant_regex", els.merchant.value);
@@ -101,6 +105,7 @@ function queryKey() {
     els.endDate.value,
     state.activeCategories.slice().sort().join(","),
     els.merchant.value,
+    els.provider?.value,
     els.merchantRegex.checked,
     els.includeHouse.checked,
     els.minAmount.value,
@@ -208,6 +213,9 @@ function resetFilters() {
   setActiveRange("");
   setActiveCategories([]);
   els.merchant.value = "";
+  if (els.provider) {
+    els.provider.value = "";
+  }
   els.merchantRegex.checked = false;
   els.includeHouse.checked = false;
   els.minAmount.value = "";
@@ -280,6 +288,20 @@ function populateCategories(categories) {
   setActiveCategories([]);
 }
 
+function populateProviders(providers) {
+  if (!els.provider) {
+    return;
+  }
+  els.provider.innerHTML = "<option value=\"\">All providers</option>";
+  providers.forEach((provider) => {
+    const option = document.createElement("option");
+    option.value = provider;
+    option.textContent = provider;
+    els.provider.appendChild(option);
+  });
+  els.provider.value = "";
+}
+
 function updateSummary(overview, categories, merchants) {
   els.totalSpend.textContent = formatCurrency(overview.total);
   els.txCount.textContent = overview.transactions;
@@ -329,6 +351,7 @@ function renderTable(rows, append = false) {
       <td>${row.merchant || ""}</td>
       <td>${row.description || ""}</td>
       <td>${row.category || "uncategorized"}</td>
+      <td>${row.provider || ""}</td>
       <td class="right">${formatCurrency(row.amount)}</td>
     `;
     els.table.appendChild(tr);
@@ -639,6 +662,7 @@ function refreshAll(resetOffset = true) {
 function loadMetadata() {
   return fetchJSON("/api/metadata").then((data) => {
     populateCategories(data.categories || []);
+    populateProviders(data.providers || []);
   });
 }
 
@@ -822,6 +846,7 @@ function init() {
     els.endDate,
     els.merchantRegex,
     els.includeHouse,
+    els.provider,
     els.period,
     els.sortBy,
     els.sortDir,

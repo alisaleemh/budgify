@@ -89,7 +89,10 @@ def main(statements_dir, output_format, include_payments, config_path,
             click.echo(f"⚠️  Skipping unknown bank file: {fname}", err=True)
             continue
         loader = get_loader(match, cfg)
-        all_txs.extend(loader.load(path, include_payments=include_payments))
+        loaded = list(loader.load(path, include_payments=include_payments))
+        for tx in loaded:
+            tx.provider = match
+        all_txs.extend(loaded)
 
     # Manual transactions
     if manual_cfg_path:

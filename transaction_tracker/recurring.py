@@ -74,6 +74,7 @@ def _expand_entry(entry) -> List[Transaction]:
                 description=description,
                 merchant=merchant,
                 amount=amount,
+                provider="recurring",
             )
         )
         generated += 1

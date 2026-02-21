@@ -19,11 +19,20 @@ def _init_db(conn: sqlite3.Connection) -> None:
             merchant TEXT NOT NULL,
             amount REAL NOT NULL,
             category TEXT,
+            provider TEXT,
             UNIQUE(date, description, merchant, amount)
         )
         """
     )
+    _ensure_column(conn, "provider", "TEXT")
     conn.commit()
+
+
+def _ensure_column(conn: sqlite3.Connection, column: str, column_type: str) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(transactions)").fetchall()}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE transactions ADD COLUMN {column} {column_type}")
+        conn.commit()
 
 
 def _connect_db(db_path: str | Path) -> sqlite3.Connection:
@@ -65,6 +74,7 @@ def append_transactions(
         rows = []
         for tx in transactions:
             cat = categorize(tx, cat_map)
+            provider = tx.provider.strip() if isinstance(tx.provider, str) and tx.provider.strip() else None
             rows.append(
                 (
                     tx.date.isoformat(),
@@ -72,13 +82,17 @@ def append_transactions(
                     tx.merchant.strip(),
                     float(tx.amount),
                     cat,
+                    provider,
                 )
             )
         conn.executemany(
             """
-            INSERT OR IGNORE INTO transactions
-            (date, description, merchant, amount, category)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO transactions
+            (date, description, merchant, amount, category, provider)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(date, description, merchant, amount) DO UPDATE SET
+                category=excluded.category,
+                provider=COALESCE(transactions.provider, excluded.provider)
             """,
             rows,
         )
@@ -95,6 +109,7 @@ def fetch_transactions(
     categories: list[str] | None = None,
     exclude_category: str | None = None,
     merchant_regex: str | None = None,
+    provider: str | None = None,
 ) -> List[Transaction]:
     """Retrieve transactions from a SQLite database.
 
@@ -113,9 +128,7 @@ def fetch_transactions(
     """
     conn = _connect_db(db_path)
     try:
-        query = (
-            "SELECT date, description, merchant, amount, category FROM transactions"
-        )
+        query = "SELECT date, description, merchant, amount, category, provider FROM transactions"
         params: list[str] = []
         conditions: list[str] = []
         if start_date:
@@ -132,6 +145,9 @@ def fetch_transactions(
         if exclude_category:
             conditions.append("LOWER(TRIM(COALESCE(category, ''))) != ?")
             params.append(exclude_category.strip().lower())
+        if provider:
+            conditions.append("provider = ?")
+            params.append(provider)
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY date"
@@ -143,6 +159,7 @@ def fetch_transactions(
                 merchant=r[2],
                 amount=float(r[3]),
                 category=r[4],
+                provider=r[5],
             )
             for r in rows
         ]
@@ -180,6 +197,7 @@ def _build_filters(
     category: str | None,
     categories: list[str] | None = None,
     exclude_category: str | None = None,
+    provider: str | None = None,
 ) -> tuple[str, list[str]]:
     conditions: list[str] = []
     params: list[str] = []
@@ -197,6 +215,9 @@ def _build_filters(
     if exclude_category:
         conditions.append("LOWER(TRIM(COALESCE(category, ''))) != ?")
         params.append(exclude_category.strip().lower())
+    if provider:
+        conditions.append("provider = ?")
+        params.append(provider)
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     return where, params
 
@@ -207,6 +228,7 @@ def _build_conditions(
     category: str | None,
     categories: list[str] | None,
     exclude_category: str | None,
+    provider: str | None,
     merchant: str | None,
     min_amount: float | None,
     max_amount: float | None,
@@ -227,6 +249,9 @@ def _build_conditions(
     if exclude_category:
         conditions.append("LOWER(TRIM(COALESCE(category, ''))) != ?")
         params.append(exclude_category.strip().lower())
+    if provider:
+        conditions.append("provider = ?")
+        params.append(provider)
     if merchant:
         conditions.append("merchant LIKE ?")
         params.append(f"%{merchant}%")
@@ -247,6 +272,7 @@ def summarize_by_category(
     category: str | None = None,
     categories: list[str] | None = None,
     exclude_category: str | None = None,
+    provider: str | None = None,
 ) -> List[Dict[str, object]]:
     """Aggregate spend totals grouped by category."""
 
@@ -258,6 +284,7 @@ def summarize_by_category(
             category,
             categories=categories,
             exclude_category=exclude_category,
+            provider=provider,
         )
         rows = conn.execute(
             f"""
@@ -301,6 +328,7 @@ def summarize_by_period(
     category: str | None = None,
     categories: list[str] | None = None,
     exclude_category: str | None = None,
+    provider: str | None = None,
 ) -> List[Dict[str, object]]:
     """Aggregate spend totals grouped by a given time period."""
 
@@ -313,6 +341,7 @@ def summarize_by_period(
             category,
             categories=categories,
             exclude_category=exclude_category,
+            provider=provider,
         )
         rows = conn.execute(
             f"""
@@ -345,6 +374,7 @@ def summarize_by_merchant(
     category: str | None = None,
     categories: list[str] | None = None,
     exclude_category: str | None = None,
+    provider: str | None = None,
 ) -> List[Dict[str, object]]:
     """Aggregate spend totals grouped by merchant."""
 
@@ -356,6 +386,7 @@ def summarize_by_merchant(
             category,
             categories=categories,
             exclude_category=exclude_category,
+            provider=provider,
         )
         rows = conn.execute(
             f"""
@@ -409,6 +440,24 @@ def list_unique_merchants(db_path: str) -> List[Dict[str, object]]:
     ]
 
 
+def list_providers(db_path: str) -> List[str]:
+    """Return unique transaction providers."""
+
+    conn = _connect_db(db_path)
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT provider
+            FROM transactions
+            WHERE provider IS NOT NULL AND TRIM(provider) != ''
+            ORDER BY provider
+            """
+        ).fetchall()
+        return [row[0] for row in rows if row[0]]
+    finally:
+        conn.close()
+
+
 def list_categories(db_path: str) -> List[str]:
     """Return unique transaction categories."""
 
@@ -433,13 +482,14 @@ def query_transactions(
     category: str | None = None,
     categories: list[str] | None = None,
     exclude_category: str | None = None,
+    provider: str | None = None,
     merchant: str | None = None,
     merchant_regex: str | None = None,
     min_amount: float | None = None,
     max_amount: float | None = None,
-    sort_by: Literal["date", "amount", "merchant", "category", "description"] = "date",
+    sort_by: Literal["date", "amount", "merchant", "category", "description", "provider"] = "date",
     sort_dir: Literal["asc", "desc"] = "asc",
-    group_by: Literal["date", "amount", "merchant", "category", "description"] | None = None,
+    group_by: Literal["date", "amount", "merchant", "category", "description", "provider"] | None = None,
     limit: int = 200,
     offset: int = 0,
 ) -> List[Dict[str, object]]:
@@ -453,6 +503,7 @@ def query_transactions(
         "merchant": "merchant",
         "category": "category",
         "description": "description",
+        "provider": "provider",
     }
     sort_column = sort_columns.get(sort_by, "date")
     group_column = sort_columns.get(group_by or "", "")
@@ -466,6 +517,7 @@ def query_transactions(
         category=category,
         categories=categories,
         exclude_category=exclude_category,
+        provider=provider,
         merchant=merchant,
         min_amount=min_amount,
         max_amount=max_amount,
@@ -479,7 +531,7 @@ def query_transactions(
                 order_clause = f"ORDER BY {group_column} ASC, {sort_column} {direction}"
             rows = conn.execute(
                 f"""
-                SELECT date, description, merchant, amount, category
+                SELECT date, description, merchant, amount, category, provider
                 FROM transactions
                 {where}
                 {order_clause}
@@ -492,7 +544,7 @@ def query_transactions(
                 order_clause = f"ORDER BY {group_column} ASC, {sort_column} {direction}"
             rows = conn.execute(
                 f"""
-                SELECT date, description, merchant, amount, category
+                SELECT date, description, merchant, amount, category, provider
                 FROM transactions
                 {where}
                 {order_clause}
@@ -510,6 +562,7 @@ def query_transactions(
             "merchant": row[2],
             "amount": float(row[3]),
             "category": row[4],
+            "provider": row[5],
         }
         for row in rows
     ]
@@ -527,6 +580,7 @@ def overview_metrics(
     category: str | None = None,
     categories: list[str] | None = None,
     exclude_category: str | None = None,
+    provider: str | None = None,
     merchant: str | None = None,
     min_amount: float | None = None,
     max_amount: float | None = None,
@@ -540,6 +594,7 @@ def overview_metrics(
         category=category,
         categories=categories,
         exclude_category=exclude_category,
+        provider=provider,
         merchant=merchant,
         min_amount=min_amount,
         max_amount=max_amount,

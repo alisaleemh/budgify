@@ -84,6 +84,12 @@
             <input type="text" id="merchant-input" placeholder="Search merchant name" />
           </label>
           <label>
+            <span>Provider</span>
+            <select id="provider-select">
+              <option value="">All providers</option>
+            </select>
+          </label>
+          <label>
             <span>Min amount</span>
             <input type="number" id="min-amount" step="0.01" placeholder="0.00" />
           </label>
@@ -114,6 +120,7 @@
               <option value="amount" selected>Amount</option>
               <option value="merchant">Merchant</option>
               <option value="category">Category</option>
+              <option value="provider">Provider</option>
               <option value="description">Description</option>
             </select>
           </label>
@@ -217,6 +224,7 @@
                 <th data-sort="merchant">Merchant</th>
                 <th data-sort="description">Description</th>
                 <th data-sort="category">Category</th>
+                <th data-sort="provider">Provider</th>
                 <th class="right" data-sort="amount">Amount</th>
               </tr>
             </thead>

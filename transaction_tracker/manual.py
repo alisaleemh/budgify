@@ -25,6 +25,7 @@ def load_manual_transactions(path):
             description=entry.get('description', ''),
             merchant=entry.get('merchant', ''),
             amount=float(entry.get('amount', 0.0)),
+            provider="manual",
         )
         txs.append(tx)
     return txs

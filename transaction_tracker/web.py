@@ -14,6 +14,7 @@ import hmac
 
 from transaction_tracker.database import (
     list_categories,
+    list_providers,
     list_unique_merchants,
     overview_metrics,
     query_transactions,
@@ -123,6 +124,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
             if path == "/api/metadata":
                 payload = {
                     "categories": list_categories(self.db_path),
+                    "providers": list_providers(self.db_path),
                     "merchants": list_unique_merchants(self.db_path),
                 }
                 _json_response(self, payload)
@@ -136,6 +138,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                     category=_get_param(query, "category"),
                     categories=categories,
                     exclude_category=_get_param(query, "exclude_category"),
+                    provider=_get_param(query, "provider"),
                     merchant=_get_param(query, "merchant"),
                     min_amount=_parse_float(_get_param(query, "min_amount")),
                     max_amount=_parse_float(_get_param(query, "max_amount")),
@@ -152,6 +155,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                     category=_get_param(query, "category"),
                     categories=categories,
                     exclude_category=_get_param(query, "exclude_category"),
+                    provider=_get_param(query, "provider"),
                 )
                 _json_response(self, payload)
                 return
@@ -169,6 +173,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                     category=_get_param(query, "category"),
                     categories=categories,
                     exclude_category=_get_param(query, "exclude_category"),
+                    provider=_get_param(query, "provider"),
                 )
                 _json_response(self, payload)
                 return
@@ -182,6 +187,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                     category=_get_param(query, "category"),
                     categories=categories,
                     exclude_category=_get_param(query, "exclude_category"),
+                    provider=_get_param(query, "provider"),
                 )
                 _json_response(self, payload[:limit])
                 return
@@ -194,6 +200,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                     category=_get_param(query, "category"),
                     categories=categories,
                     exclude_category=_get_param(query, "exclude_category"),
+                    provider=_get_param(query, "provider"),
                     merchant=_get_param(query, "merchant"),
                     merchant_regex=_get_param(query, "merchant_regex"),
                     min_amount=_parse_float(_get_param(query, "min_amount")),

@@ -116,6 +116,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
 
     def _handle_api(self, parsed) -> None:
         query = parse_qs(parsed.query)
+        categories = _get_categories(query)
         path = parsed.path
 
         try:
@@ -133,6 +134,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                     start_date=_parse_date(_get_param(query, "start_date")),
                     end_date=_parse_date(_get_param(query, "end_date")),
                     category=_get_param(query, "category"),
+                    categories=categories,
                     exclude_category=_get_param(query, "exclude_category"),
                     merchant=_get_param(query, "merchant"),
                     min_amount=_parse_float(_get_param(query, "min_amount")),
@@ -147,6 +149,8 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                     self.db_path,
                     start_date=_parse_date(_get_param(query, "start_date")),
                     end_date=_parse_date(_get_param(query, "end_date")),
+                    category=_get_param(query, "category"),
+                    categories=categories,
                     exclude_category=_get_param(query, "exclude_category"),
                 )
                 _json_response(self, payload)
@@ -163,6 +167,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                     start_date=_parse_date(_get_param(query, "start_date")),
                     end_date=_parse_date(_get_param(query, "end_date")),
                     category=_get_param(query, "category"),
+                    categories=categories,
                     exclude_category=_get_param(query, "exclude_category"),
                 )
                 _json_response(self, payload)
@@ -175,6 +180,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                     start_date=_parse_date(_get_param(query, "start_date")),
                     end_date=_parse_date(_get_param(query, "end_date")),
                     category=_get_param(query, "category"),
+                    categories=categories,
                     exclude_category=_get_param(query, "exclude_category"),
                 )
                 _json_response(self, payload[:limit])
@@ -186,6 +192,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                     start_date=_parse_date(_get_param(query, "start_date")),
                     end_date=_parse_date(_get_param(query, "end_date")),
                     category=_get_param(query, "category"),
+                    categories=categories,
                     exclude_category=_get_param(query, "exclude_category"),
                     merchant=_get_param(query, "merchant"),
                     merchant_regex=_get_param(query, "merchant_regex"),
@@ -258,6 +265,23 @@ def _guess_content_type(path: Path) -> str:
 def _get_param(query: dict[str, list[str]], key: str) -> str | None:
     values = query.get(key)
     return values[0] if values else None
+
+
+def _get_categories(query: dict[str, list[str]]) -> list[str] | None:
+    raw_values = query.get("categories") or query.get("category")
+    if not raw_values:
+        return None
+
+    categories: list[str] = []
+    for raw in raw_values:
+        for part in raw.split(","):
+            cleaned = part.strip()
+            if cleaned:
+                categories.append(cleaned)
+
+    if not categories:
+        return None
+    return list(dict.fromkeys(categories))
 
 
 def main() -> None:

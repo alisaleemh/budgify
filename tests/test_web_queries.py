@@ -52,6 +52,14 @@ def test_query_transactions_filters_and_sorting(tmp_path):
     regex = query_transactions(str(db_path), merchant_regex="bean|shell", sort_by="date", sort_dir="asc")
     assert [tx["merchant"] for tx in regex] == ["Bean House", "Shell"]
 
+    multi_category = query_transactions(
+        str(db_path),
+        categories=["groceries", "car"],
+        sort_by="date",
+        sort_dir="asc",
+    )
+    assert [tx["merchant"] for tx in multi_category] == ["Fresh Market", "Shell"]
+
     paged = query_transactions(str(db_path), sort_by="date", sort_dir="asc", limit=2, offset=1)
     assert len(paged) == 2
     assert paged[0]["merchant"] == "Bean House"
@@ -71,6 +79,10 @@ def test_overview_metrics_and_categories(tmp_path):
     assert regex_overview["transactions"] == 2
     assert regex_overview["total"] == 72.0
 
+    multi_category_overview = overview_metrics(str(db_path), categories=["groceries", "restaurants"])
+    assert multi_category_overview["transactions"] == 2
+    assert multi_category_overview["total"] == 57.5
+
     categories = list_categories(str(db_path))
     assert "groceries" in categories
     assert "restaurants" in categories
@@ -85,6 +97,15 @@ def test_exclude_category_filters(tmp_path):
 
     category_summary = summarize_by_category(str(db_path), exclude_category="house")
     assert all(row["category"] != "house" for row in category_summary)
+
+    house_and_car = query_transactions(
+        str(db_path),
+        categories=["house", "car"],
+        exclude_category="house",
+        sort_by="amount",
+        sort_dir="desc",
+    )
+    assert [tx["category"] for tx in house_and_car] == ["car"]
 
 
 def test_query_transactions_grouped_sort(tmp_path):

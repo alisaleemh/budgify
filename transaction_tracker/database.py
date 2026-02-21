@@ -92,6 +92,7 @@ def fetch_transactions(
     start_date: date | None = None,
     end_date: date | None = None,
     category: str | None = None,
+    categories: list[str] | None = None,
     exclude_category: str | None = None,
     merchant_regex: str | None = None,
 ) -> List[Transaction]:
@@ -123,9 +124,11 @@ def fetch_transactions(
         if end_date:
             conditions.append("date <= ?")
             params.append(end_date.isoformat())
-        if category:
-            conditions.append("category = ?")
-            params.append(category)
+        selected_categories = _normalize_categories(category=category, categories=categories)
+        if selected_categories:
+            placeholders = ", ".join(["?"] * len(selected_categories))
+            conditions.append(f"category IN ({placeholders})")
+            params.extend(selected_categories)
         if exclude_category:
             conditions.append("LOWER(TRIM(COALESCE(category, ''))) != ?")
             params.append(exclude_category.strip().lower())
@@ -151,10 +154,31 @@ def fetch_transactions(
         conn.close()
 
 
+def _normalize_categories(
+    category: str | None = None,
+    categories: list[str] | None = None,
+) -> list[str] | None:
+    values: list[str] = []
+    if categories:
+        for raw in categories:
+            cleaned = raw.strip()
+            if cleaned:
+                values.append(cleaned)
+    elif category:
+        cleaned = category.strip()
+        if cleaned:
+            values.append(cleaned)
+
+    if not values:
+        return None
+    return list(dict.fromkeys(values))
+
+
 def _build_filters(
     start_date: date | None,
     end_date: date | None,
     category: str | None,
+    categories: list[str] | None = None,
     exclude_category: str | None = None,
 ) -> tuple[str, list[str]]:
     conditions: list[str] = []
@@ -165,9 +189,11 @@ def _build_filters(
     if end_date:
         conditions.append("date <= ?")
         params.append(end_date.isoformat())
-    if category:
-        conditions.append("category = ?")
-        params.append(category)
+    selected_categories = _normalize_categories(category=category, categories=categories)
+    if selected_categories:
+        placeholders = ", ".join(["?"] * len(selected_categories))
+        conditions.append(f"category IN ({placeholders})")
+        params.extend(selected_categories)
     if exclude_category:
         conditions.append("LOWER(TRIM(COALESCE(category, ''))) != ?")
         params.append(exclude_category.strip().lower())
@@ -179,6 +205,7 @@ def _build_conditions(
     start_date: date | None,
     end_date: date | None,
     category: str | None,
+    categories: list[str] | None,
     exclude_category: str | None,
     merchant: str | None,
     min_amount: float | None,
@@ -192,9 +219,11 @@ def _build_conditions(
     if end_date:
         conditions.append("date <= ?")
         params.append(end_date.isoformat())
-    if category:
-        conditions.append("category = ?")
-        params.append(category)
+    selected_categories = _normalize_categories(category=category, categories=categories)
+    if selected_categories:
+        placeholders = ", ".join(["?"] * len(selected_categories))
+        conditions.append(f"category IN ({placeholders})")
+        params.extend(selected_categories)
     if exclude_category:
         conditions.append("LOWER(TRIM(COALESCE(category, ''))) != ?")
         params.append(exclude_category.strip().lower())
@@ -215,13 +244,21 @@ def summarize_by_category(
     db_path: str,
     start_date: date | None = None,
     end_date: date | None = None,
+    category: str | None = None,
+    categories: list[str] | None = None,
     exclude_category: str | None = None,
 ) -> List[Dict[str, object]]:
     """Aggregate spend totals grouped by category."""
 
     conn = _connect_db(db_path)
     try:
-        where, params = _build_filters(start_date, end_date, None, exclude_category=exclude_category)
+        where, params = _build_filters(
+            start_date,
+            end_date,
+            category,
+            categories=categories,
+            exclude_category=exclude_category,
+        )
         rows = conn.execute(
             f"""
             SELECT COALESCE(category, 'uncategorized') AS category,
@@ -262,6 +299,7 @@ def summarize_by_period(
     start_date: date | None = None,
     end_date: date | None = None,
     category: str | None = None,
+    categories: list[str] | None = None,
     exclude_category: str | None = None,
 ) -> List[Dict[str, object]]:
     """Aggregate spend totals grouped by a given time period."""
@@ -269,7 +307,13 @@ def summarize_by_period(
     expr = _PERIOD_EXPRESSIONS[period]
     conn = _connect_db(db_path)
     try:
-        where, params = _build_filters(start_date, end_date, category, exclude_category=exclude_category)
+        where, params = _build_filters(
+            start_date,
+            end_date,
+            category,
+            categories=categories,
+            exclude_category=exclude_category,
+        )
         rows = conn.execute(
             f"""
             SELECT {expr} AS period,
@@ -299,13 +343,20 @@ def summarize_by_merchant(
     start_date: date | None = None,
     end_date: date | None = None,
     category: str | None = None,
+    categories: list[str] | None = None,
     exclude_category: str | None = None,
 ) -> List[Dict[str, object]]:
     """Aggregate spend totals grouped by merchant."""
 
     conn = _connect_db(db_path)
     try:
-        where, params = _build_filters(start_date, end_date, category, exclude_category=exclude_category)
+        where, params = _build_filters(
+            start_date,
+            end_date,
+            category,
+            categories=categories,
+            exclude_category=exclude_category,
+        )
         rows = conn.execute(
             f"""
             SELECT merchant,
@@ -380,6 +431,7 @@ def query_transactions(
     start_date: date | None = None,
     end_date: date | None = None,
     category: str | None = None,
+    categories: list[str] | None = None,
     exclude_category: str | None = None,
     merchant: str | None = None,
     merchant_regex: str | None = None,
@@ -412,6 +464,7 @@ def query_transactions(
         start_date=start_date,
         end_date=end_date,
         category=category,
+        categories=categories,
         exclude_category=exclude_category,
         merchant=merchant,
         min_amount=min_amount,
@@ -472,6 +525,7 @@ def overview_metrics(
     start_date: date | None = None,
     end_date: date | None = None,
     category: str | None = None,
+    categories: list[str] | None = None,
     exclude_category: str | None = None,
     merchant: str | None = None,
     min_amount: float | None = None,
@@ -484,6 +538,7 @@ def overview_metrics(
         start_date=start_date,
         end_date=end_date,
         category=category,
+        categories=categories,
         exclude_category=exclude_category,
         merchant=merchant,
         min_amount=min_amount,

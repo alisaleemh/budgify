@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import html
 import json
 import os
 from datetime import date
@@ -25,6 +26,8 @@ from transaction_tracker.database import (
 
 STATIC_DIR = Path(__file__).with_name("web_ui")
 DEFAULT_PASSWORD_KEY = "Altaf Hussain"
+DEFAULT_UI_HOME_NAME = "Ali's Home"
+
 
 
 def _xor_bytes(data: bytes, key: bytes) -> bytes:
@@ -85,6 +88,42 @@ def _parse_int(value: str | None, default: int | None = None) -> int | None:
     if value is None or value == "":
         return default
     return int(value)
+
+
+def _get_ui_text() -> dict[str, str]:
+    app_name = os.environ.get("BUDGIFY_UI_APP_NAME", "Budgify").strip() or "Budgify"
+    home_name = os.environ.get("BUDGIFY_UI_HOME_NAME", DEFAULT_UI_HOME_NAME).strip() or DEFAULT_UI_HOME_NAME
+
+    app_title = os.environ.get("BUDGIFY_UI_TITLE_TEMPLATE", "{app} · {home}").format(
+        app=app_name,
+        home=home_name,
+    )
+    app_eyebrow = os.environ.get("BUDGIFY_UI_EYEBROW_TEMPLATE", "{app} Home").format(
+        app=app_name,
+        home=home_name,
+    )
+    app_headline = os.environ.get(
+        "BUDGIFY_UI_HEADLINE_TEMPLATE",
+        "{home} spending, powered by {app}.",
+    ).format(app=app_name, home=home_name)
+    app_lede = os.environ.get(
+        "BUDGIFY_UI_LEDE_TEMPLATE",
+        "Explore monthly trends, category mix, and top merchants for your home ledger.",
+    ).format(app=app_name, home=home_name)
+
+    return {
+        "{{APP_TITLE}}": html.escape(app_title),
+        "{{APP_EYEBROW}}": html.escape(app_eyebrow),
+        "{{APP_HEADLINE}}": html.escape(app_headline),
+        "{{APP_LEDE}}": html.escape(app_lede),
+    }
+
+
+def _render_index_html(html_text: str) -> str:
+    rendered = html_text
+    for token, value in _get_ui_text().items():
+        rendered = rendered.replace(token, value)
+    return rendered
 
 
 def _json_response(handler: BaseHTTPRequestHandler, payload: Any, status: int = 200) -> None:
@@ -230,7 +269,10 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
             return
 
         content_type = _guess_content_type(resolved)
-        body = resolved.read_bytes()
+        if resolved.name == "index.html":
+            body = _render_index_html(resolved.read_text(encoding="utf-8")).encode("utf-8")
+        else:
+            body = resolved.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))

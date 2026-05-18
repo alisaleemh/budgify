@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import List, Protocol
 
 from transaction_tracker.core.models import Transaction
+from transaction_tracker.ai.config import load_ai_config
+from transaction_tracker.ai.providers import ChatCompletionsProvider, CerebrasProvider
 from huggingface_hub import InferenceClient
 from abc import ABC, abstractmethod
 
@@ -155,17 +157,26 @@ def _tx_to_line(tx: Transaction) -> str:
 
 
 def get_provider_from_env() -> LLMProvider:
-    provider = os.environ.get("BUDGIFY_LLM_PROVIDER", "huggingface").lower()
+    provider = os.environ.get("AI_PROVIDER") or os.environ.get("BUDGIFY_LLM_PROVIDER", "huggingface")
+    provider = provider.lower()
+
+    if provider == "cerebras":
+        return CerebrasProvider(load_ai_config())
+
+    if provider not in {"huggingface", "openai", "ollama"} and os.environ.get("AI_PROVIDER"):
+        return ChatCompletionsProvider(load_ai_config())
 
     if provider == "openai":
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = os.environ.get("AI_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY not set")
-        model = os.environ.get("BUDGIFY_LLM_MODEL", "gpt-3.5-turbo")
-        return OpenAIProvider(model=model, api_key=api_key)
+        if os.environ.get("AI_PROVIDER"):
+            return ChatCompletionsProvider(load_ai_config())
+        model = os.environ.get("AI_MODEL") or os.environ.get("BUDGIFY_LLM_MODEL", "gpt-3.5-turbo")
+        return OpenAIProvider(model=model, api_key=api_key.strip())
 
     if provider == "ollama":
-        model = os.environ.get("BUDGIFY_LLM_MODEL", "phi3:mini")
+        model = os.environ.get("AI_MODEL") or os.environ.get("BUDGIFY_LLM_MODEL", "phi3:mini")
         url = os.environ.get("OLLAMA_URL", _OLLAMA_URL)
         return OllamaProvider(model=model, url=url)
 

@@ -3,6 +3,7 @@ import { AlertCircle, ChevronsDown, ChevronsUp } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { AssistantPanel } from "@/components/dashboard/AssistantPanel";
 import { ChartCard } from "@/components/dashboard/ChartCard";
 import { FiltersPanel } from "@/components/dashboard/FiltersPanel";
 import { LoadingState } from "@/components/dashboard/LoadingState";
@@ -259,6 +260,8 @@ export default function App() {
                 />
               </div>
             </section>
+
+            <AssistantPanel />
 
             <section id="transactions">
               <TransactionTable

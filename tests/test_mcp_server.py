@@ -5,6 +5,13 @@ from transaction_tracker.core.models import Transaction
 from transaction_tracker.database import append_transactions
 from transaction_tracker.mcp_server import (
     analyze_category_spend,
+    budgify_compare_periods,
+    budgify_find_transactions,
+    budgify_health,
+    budgify_insight_context,
+    budgify_profile_summary,
+    budgify_query_bundle,
+    budgify_spend_summary,
     get_categories,
     list_unique_merchants_tool,
     summarize_spend_by_category,
@@ -140,3 +147,136 @@ def test_analyze_category_spend(tmp_path):
     opp_types = {item["type"] for item in result["optimization_opportunities"]}
     assert "merchant_concentration" in opp_types
     assert "recent_spike" in opp_types
+
+
+def test_budgify_health_and_profile(tmp_path):
+    db_path = _setup_db(tmp_path)
+
+    async def run():
+        return await budgify_health(str(db_path)), await budgify_profile_summary(str(db_path))
+
+    health, profile = anyio.run(run)
+    assert health["ok"] is True
+    assert health["db"] == "ok"
+    assert "spend_summary" in health["capabilities"]
+    assert profile["transactionCount"] == 4
+    assert profile["categoryCount"] == 2
+    assert profile["merchantCount"] == 4
+
+
+def test_budgify_spend_summary_compact(tmp_path):
+    db_path = _setup_db(tmp_path)
+
+    async def run():
+        return await budgify_spend_summary(
+            str(db_path),
+            startDate="2025-01-01",
+            endDate="2025-02-28",
+            groupBy="category",
+            includeComparison={"mode": "previous_period"},
+            limit=10,
+        )
+
+    result = anyio.run(run)
+    lookup = {item["label"]: item for item in result["groups"]}
+    assert result["totalCents"] == 8500
+    assert lookup["restaurants"]["totalCents"] == 4500
+    assert "deltaCents" in lookup["restaurants"]
+
+
+def test_budgify_find_transactions_limit_cursor_fields(tmp_path):
+    db_path = _setup_db(tmp_path)
+
+    async def run():
+        first = await budgify_find_transactions(
+            str(db_path),
+            startDate="2025-01-01",
+            endDate="2025-02-28",
+            limit=2,
+            fields=["id", "date", "amountCents"],
+        )
+        second = await budgify_find_transactions(
+            str(db_path),
+            startDate="2025-01-01",
+            endDate="2025-02-28",
+            limit=2,
+            cursor=first["nextCursor"],
+            fields=["id", "date", "amountCents"],
+        )
+        invalid = await budgify_find_transactions(
+            str(db_path),
+            startDate="2025-01-01",
+            endDate="2025-02-28",
+            limit=500,
+            fields=["secret"],
+        )
+        return first, second, invalid
+
+    first, second, invalid = anyio.run(run)
+    assert len(first["items"]) == 2
+    assert first["nextCursor"] == "2"
+    assert len(second["items"]) == 2
+    assert set(first["items"][0]) == {"id", "date", "amountCents"}
+    assert invalid["error"]["code"] == "INVALID_FIELDS"
+
+
+def test_budgify_compare_periods(tmp_path):
+    db_path = _setup_db(tmp_path)
+
+    async def run():
+        return await budgify_compare_periods(
+            str(db_path),
+            periodA={"startDate": "2025-02-01", "endDate": "2025-02-28"},
+            periodB={"startDate": "2025-01-01", "endDate": "2025-01-31"},
+            groupBy="category",
+        )
+
+    result = anyio.run(run)
+    assert result["periodA"]["totalCents"] == 5500
+    assert result["periodB"]["totalCents"] == 3000
+    assert result["deltaCents"] == 2500
+    assert result["topDrivers"]
+
+
+def test_budgify_query_bundle_max_subqueries(tmp_path):
+    db_path = _setup_db(tmp_path)
+
+    async def run():
+        ok = await budgify_query_bundle(
+            str(db_path),
+            queries=[
+                {
+                    "id": "jan",
+                    "tool": "spend_summary",
+                    "args": {"startDate": "2025-01-01", "endDate": "2025-01-31", "groupBy": "category"},
+                }
+            ],
+        )
+        too_many = await budgify_query_bundle(
+            str(db_path),
+            queries=[{"id": str(idx), "tool": "spend_summary", "args": {}} for idx in range(6)],
+        )
+        return ok, too_many
+
+    ok, too_many = anyio.run(run)
+    assert ok["results"]["jan"]["totalCents"] == 3000
+    assert too_many["error"]["code"] == "TOO_MANY_QUERIES"
+
+
+def test_budgify_insight_context_compact(tmp_path):
+    db_path = _setup_db(tmp_path)
+
+    async def run():
+        return await budgify_insight_context(
+            str(db_path),
+            startDate="2025-02-01",
+            endDate="2025-02-28",
+            include=["totals", "top_categories", "drivers"],
+            limits={"topCategories": 2, "drivers": 2},
+        )
+
+    result = anyio.run(run)
+    assert "topCategories" in result
+    assert len(result["topCategories"]) <= 2
+    assert "drivers" in result
+    assert "transactions" not in result

@@ -30,5 +30,33 @@ services:
       - ${STATEMENTS_HOST_DIR:-./statements}:/statements:ro
       - ${CONFIG_PATH:-./config.yaml}:/app/config.yaml:ro
 
+  auction-web:
+    build:
+      context: ./self-learn/auction_search_tool
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["python", "app.py", "serve", "--port", "5001"]
+    ports:
+      - "5001:5001"
+    volumes:
+      - auction-data:/app/data
+
+  auction-indexer:
+    build:
+      context: ./self-learn/auction_search_tool
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command:
+      [
+        "sh",
+        "-c",
+        "while true; do echo \"[$$(date -Iseconds)] index start\"; python -u app.py index; echo \"[$$(date -Iseconds)] index sleep $${INDEX_INTERVAL:-21600}s\"; sleep \"$${INDEX_INTERVAL:-21600}\"; done",
+      ]
+    environment:
+      INDEX_INTERVAL: ${AUCTION_INDEX_INTERVAL:-21600}
+    volumes:
+      - auction-data:/app/data
+
 volumes:
   budgify-data:
+  auction-data:

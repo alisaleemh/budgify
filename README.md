@@ -233,6 +233,24 @@ Open `http://127.0.0.1:8000` to explore interactive dashboards: monthly spend,
 category mix, top merchants, and a queryable transaction table driven directly
 from the SQLite database.
 
+#### Frontend development
+
+The web dashboard is a Vite React TypeScript app styled with Tailwind CSS and
+shadcn-style components. Source files live in `web_src/`; production assets are
+built into `transaction_tracker/web_ui/`, which is served by `budgify-web`.
+
+```bash
+npm install
+npm run lint
+npm run typecheck
+npm run build
+```
+
+Use the shadcn `new-york` style, CSS variables, and the existing zinc/slate
+tokens in `web_src/src/index.css`. Keep reusable primitives in
+`web_src/src/components/ui/` and dashboard-specific pieces in
+`web_src/src/components/dashboard/`.
+
 ### Manual Transactions
 
 Any cash purchases or other expenses not present in bank statements can be

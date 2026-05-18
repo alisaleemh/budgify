@@ -264,6 +264,9 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
         if path == "/":
             path = "/index.html"
         resolved = (static_root / unquote(path.lstrip("/"))).resolve()
+        if static_root not in resolved.parents and resolved != static_root:
+            self.send_error(404)
+            return
         if not resolved.exists() or not resolved.is_file():
             self.send_error(404)
             return
@@ -276,7 +279,12 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        if resolved.name == "index.html":
+            self.send_header("Cache-Control", "no-store")
+        elif "/assets/" in resolved.as_posix():
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -304,10 +312,22 @@ def _guess_content_type(path: Path) -> str:
         return "text/css; charset=utf-8"
     if path.suffix == ".js":
         return "text/javascript; charset=utf-8"
+    if path.suffix == ".mjs":
+        return "text/javascript; charset=utf-8"
+    if path.suffix == ".json":
+        return "application/json"
+    if path.suffix == ".map":
+        return "application/json"
     if path.suffix == ".svg":
         return "image/svg+xml"
     if path.suffix == ".png":
         return "image/png"
+    if path.suffix == ".ico":
+        return "image/x-icon"
+    if path.suffix == ".woff2":
+        return "font/woff2"
+    if path.suffix == ".woff":
+        return "font/woff"
     return "application/octet-stream"
 
 

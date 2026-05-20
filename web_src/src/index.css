@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 240 10% 4%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 4%;
+    --primary: 173 58% 26%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 6% 10%;
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+    --accent: 20 76% 53%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 173 58% 26%;
+    --radius: 0.75rem;
+    --chart-line: 20 76% 53%;
+    --chart-bar: 173 58% 26%;
+    --chart-grid: 240 6% 90%;
+  }
+
+  .dark {
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 6%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 6%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 173 44% 43%;
+    --primary-foreground: 240 10% 4%;
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 20 72% 57%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 173 44% 43%;
+    --chart-line: 20 72% 57%;
+    --chart-bar: 173 44% 43%;
+    --chart-grid: 240 4% 22%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "tnum" 1;
+  }
+}
+
+@layer components {
+  .dashboard-shell {
+    @apply min-h-screen bg-zinc-50 text-zinc-950;
+  }
+
+  .dashboard-main {
+    @apply mx-auto flex w-full max-w-[1480px] gap-4 px-3 py-4 sm:px-5 lg:px-6;
+  }
+
+  .filter-grid {
+    @apply grid gap-3 md:grid-cols-2 xl:grid-cols-4;
+  }
+
+  .chart-canvas {
+    @apply h-64 w-full rounded-xl border bg-zinc-50;
+  }
+
+  .chart-card-expanded .chart-canvas {
+    @apply h-[360px];
+  }
+
+  .numeric {
+    font-variant-numeric: tabular-nums;
+  }
+}

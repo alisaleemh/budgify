@@ -13,6 +13,9 @@ from urllib.parse import parse_qs, urlparse, unquote
 
 import hmac
 
+from transaction_tracker.ai.assistant import query_finance_assistant
+from transaction_tracker.ai.config import ai_status
+from transaction_tracker.ai.finance_tools import ToolValidationError
 from transaction_tracker.database import (
     list_categories,
     list_providers,
@@ -136,6 +139,24 @@ def _json_response(handler: BaseHTTPRequestHandler, payload: Any, status: int = 
     handler.wfile.write(body)
 
 
+def _read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
+    length_value = handler.headers.get("Content-Length", "0")
+    try:
+        length = int(length_value)
+    except ValueError as exc:
+        raise ValueError("invalid Content-Length") from exc
+    if length <= 0:
+        return {}
+    raw = handler.rfile.read(length)
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError("request body must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("request body must be a JSON object")
+    return payload
+
+
 class BudgifyWebHandler(BaseHTTPRequestHandler):
     db_path = "budgify.db"
     static_dir = STATIC_DIR
@@ -154,12 +175,25 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
             return
         self._handle_static(parsed.path)
 
+    def do_POST(self) -> None:
+        if not self._authorize_request():
+            return
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/assistant/query":
+            self._handle_assistant_query()
+            return
+        _json_response(self, {"error": "not found"}, status=404)
+
     def _handle_api(self, parsed) -> None:
         query = parse_qs(parsed.query)
         categories = _get_categories(query)
         path = parsed.path
 
         try:
+            if path == "/api/assistant/status":
+                _json_response(self, ai_status())
+                return
+
             if path == "/api/metadata":
                 payload = {
                     "categories": list_categories(self.db_path),
@@ -258,12 +292,33 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
 
         _json_response(self, {"error": "not found"}, status=404)
 
+    def _handle_assistant_query(self) -> None:
+        try:
+            payload = _read_json_body(self)
+            question = payload.get("question")
+            if not isinstance(question, str) or not question.strip():
+                _json_response(self, {"error": "question is required"}, status=400)
+                return
+            result = query_finance_assistant(self.db_path, question)
+            _json_response(self, {"answer": result.answer, "dataUsed": result.data_used})
+        except ToolValidationError as exc:
+            _json_response(self, {"error": str(exc)}, status=400)
+        except ValueError as exc:
+            _json_response(self, {"error": str(exc)}, status=400)
+        except RuntimeError as exc:
+            _json_response(self, {"error": str(exc)}, status=503)
+        except Exception as exc:
+            _json_response(self, {"error": str(exc)}, status=500)
+
     def _handle_static(self, raw_path: str) -> None:
         static_root = Path(self.static_dir).resolve()
         path = raw_path or "/"
         if path == "/":
             path = "/index.html"
         resolved = (static_root / unquote(path.lstrip("/"))).resolve()
+        if static_root not in resolved.parents and resolved != static_root:
+            self.send_error(404)
+            return
         if not resolved.exists() or not resolved.is_file():
             self.send_error(404)
             return
@@ -276,7 +331,12 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        if resolved.name == "index.html":
+            self.send_header("Cache-Control", "no-store")
+        elif "/assets/" in resolved.as_posix():
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -304,10 +364,22 @@ def _guess_content_type(path: Path) -> str:
         return "text/css; charset=utf-8"
     if path.suffix == ".js":
         return "text/javascript; charset=utf-8"
+    if path.suffix == ".mjs":
+        return "text/javascript; charset=utf-8"
+    if path.suffix == ".json":
+        return "application/json"
+    if path.suffix == ".map":
+        return "application/json"
     if path.suffix == ".svg":
         return "image/svg+xml"
     if path.suffix == ".png":
         return "image/png"
+    if path.suffix == ".ico":
+        return "image/x-icon"
+    if path.suffix == ".woff2":
+        return "font/woff2"
+    if path.suffix == ".woff":
+        return "font/woff"
     return "application/octet-stream"
 
 

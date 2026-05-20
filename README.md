@@ -233,6 +233,24 @@ Open `http://127.0.0.1:8000` to explore interactive dashboards: monthly spend,
 category mix, top merchants, and a queryable transaction table driven directly
 from the SQLite database.
 
+#### Frontend development
+
+The web dashboard is a Vite React TypeScript app styled with Tailwind CSS and
+shadcn-style components. Source files live in `web_src/`; production assets are
+built into `transaction_tracker/web_ui/`, which is served by `budgify-web`.
+
+```bash
+npm install
+npm run lint
+npm run typecheck
+npm run build
+```
+
+Use the shadcn `new-york` style, CSS variables, and the existing zinc/slate
+tokens in `web_src/src/index.css`. Keep reusable primitives in
+`web_src/src/components/ui/` and dashboard-specific pieces in
+`web_src/src/components/dashboard/`.
+
 ### Manual Transactions
 
 Any cash purchases or other expenses not present in bank statements can be
@@ -295,16 +313,38 @@ This will create (or update) a **"Budget 2025"** workbook in your Drive folder, 
 - An `AllData` tab.
 - A `Summary` tab aggregating by month & category.
 
-### AI Report
+### AI Report and Assistant
 
 Pass `--ai-report` when running Budgify to send the final list of
 transactions to an LLM for analysis.  `transaction_tracker.ai` exposes an
-`LLMClient` capable of using multiple providers (Hugging Face or OpenAI
-via environment variables) and composable output layers.  The default
-`InsightsReport` class is used by the CLI.  Configure your provider with
-`HF_API_TOKEN` or `OPENAI_API_KEY` (and `BUDGIFY_LLM_PROVIDER=openai`).
-These variables can be stored in a `.env` file and loaded with
-`--env-file path/to/.env`.
+`LLMClient` capable of using multiple providers and composable output layers.
+The default `InsightsReport` class is used by the CLI.
+
+The web UI also includes **Ask Budgify**, a conversational finance assistant
+backed by the local ledger database. It uses tool calls to answer questions
+about transactions, categories, merchants, period comparisons, recurring
+charges, top merchants, and unusual spending. The backend exposes:
+
+- `GET /api/assistant/status`
+- `POST /api/assistant/query` with JSON body `{"question": "..."}`
+
+Configure the assistant with Cerebras:
+
+```bash
+export AI_PROVIDER=cerebras
+export AI_API_KEY_FILE=~/api-key
+export AI_MODEL=zai-glm-4.7
+export AI_BASE_URL=https://api.cerebras.ai/v1
+```
+
+`AI_API_KEY` can be used instead of `AI_API_KEY_FILE`. When a key file is used,
+Budgify reads it internally, strips surrounding whitespace, and only reports
+whether a key is present. It never returns the key from the status endpoint.
+
+Legacy report provider variables are still supported: `HF_API_TOKEN`,
+`OPENAI_API_KEY`, `BUDGIFY_LLM_PROVIDER=openai`, and `BUDGIFY_LLM_MODEL`.
+These variables can be stored in a `.env` file and loaded with `--env-file
+path/to/.env`.
 
 To use a local LLM such as [Ollama](https://github.com/ollama/ollama), set
 `BUDGIFY_LLM_PROVIDER=ollama` and optionally `OLLAMA_URL` if your server is not
@@ -312,14 +352,84 @@ running on `http://localhost:11434`.
 
 ### MCP Server
 
-Budgify can be exposed as an MCP server so tools like a locally running LLM can
-invoke it directly. Install the optional `mcp` dependency and run:
+Budgify exposes a read-only MCP server for Codex and other MCP clients. The
+server is optimized for low token use: aggregate tools first, capped raw rows,
+compact JSON, cents integers, stable dimension IDs, and no secrets.
 
 ```bash
-budgify-mcp
+DATABASE_URL=sqlite:///$(pwd)/budgify.db MCP_TRANSPORT=stdio budgify-mcp
 ```
 
-This starts a FastMCP server exposing:
+Environment:
+
+- `MCP_TRANSPORT=stdio|http|sse` (`stdio` default; `http` maps to streamable HTTP)
+- `MCP_PORT=8002` for HTTP/SSE
+- `MCP_AUTH_TOKEN` reserved for HTTP deployments; do not use secrets in tool args
+- `DATABASE_URL=sqlite:////absolute/path/budgify.db` or `BUDGIFY_DB_PATH=/path/db`
+- `LOG_LEVEL=info`
+
+Codex MCP config example:
+
+```json
+{
+  "mcpServers": {
+    "budgify": {
+      "command": "budgify-mcp",
+      "env": {
+        "MCP_TRANSPORT": "stdio",
+        "DATABASE_URL": "sqlite:////Users/you/path/budgify.db"
+      }
+    }
+  }
+}
+```
+
+HTTP/SSE examples:
+
+```bash
+MCP_TRANSPORT=http MCP_PORT=8002 DATABASE_URL=sqlite:////Users/you/path/budgify.db budgify-mcp
+MCP_TRANSPORT=sse MCP_PORT=8002 DATABASE_URL=sqlite:////Users/you/path/budgify.db budgify-mcp
+```
+
+Core tools:
+
+- `budgify.health` - server/db readiness.
+- `budgify.profile_summary` - date range, counts, currency, no transactions.
+- `budgify.spend_summary` - main aggregate by category, merchant, month, week, or account.
+- `budgify.find_transactions` - filtered/paged raw rows only when needed.
+- `budgify.merchant_summary` - merchant totals and optional tiny sample.
+- `budgify.category_summary` - category totals and optional comparison.
+- `budgify.compare_periods` - period totals, deltas, top drivers.
+- `budgify.top_drivers` - spend-change explanation by category or merchant.
+- `budgify.recurring_transactions` - recurring/subscription candidates.
+- `budgify.anomalies` - unusual category, merchant, or transaction spend.
+- `budgify.search_dimensions` - resolve merchant/category/account names to stable IDs.
+- `budgify.query_bundle` - up to 5 safe read subqueries in one roundtrip.
+- `budgify.insight_context` - compact context pack for “explain my month” questions.
+
+Resources:
+
+- `budgify://schema`
+- `budgify://capabilities`
+- `budgify://examples`
+
+Prompts:
+
+- `explain_month`
+- `compare_months`
+- `find_unusual_spending`
+- `merchant_deep_dive`
+- `budget_review`
+
+Cost guidance:
+
+- Use `budgify.insight_context` for explanation questions.
+- Use `budgify.spend_summary` before merchant/category drilldowns.
+- Use `budgify.search_dimensions` to resolve names, then query by IDs.
+- Use `budgify.query_bundle` when multiple independent summaries are needed.
+- Use `budgify.find_transactions` only for audit/detail checks, with fields and limits.
+
+Legacy tools remain for compatibility:
 
 - `get_categories` – list the canonical Budgify categories.
 - `summarize_spend_by_category` – total spending grouped by category.

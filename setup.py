@@ -10,7 +10,7 @@ setup(
     url="https://github.com/yourusername/budgify",
     packages=find_packages(),
     include_package_data=True,
-    package_data={"transaction_tracker": ["web_ui/*"]},
+    package_data={"transaction_tracker": ["web_ui/*", "web_ui/assets/*"]},
     python_requires=">=3.7",
     install_requires=[
         "click>=7.0",

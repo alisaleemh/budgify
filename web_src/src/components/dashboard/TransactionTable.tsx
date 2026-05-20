@@ -30,6 +30,7 @@ interface TransactionTableProps {
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   onSortChange: (sortBy: SortBy, sortDir: SortDir) => void;
+  onRowClick: (row: Transaction) => void;
 }
 
 export function TransactionTable({
@@ -43,6 +44,7 @@ export function TransactionTable({
   onPageChange,
   onPageSizeChange,
   onSortChange,
+  onRowClick,
 }: TransactionTableProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -116,7 +118,19 @@ export function TransactionTable({
               </TableHeader>
               <TableBody>
                 {rows.map((row, index) => (
-                  <TableRow key={`${row.date}-${row.merchant}-${row.amount}-${index}`}>
+                  <TableRow
+                    key={`${row.date}-${row.merchant}-${row.amount}-${index}`}
+                    className="cursor-pointer"
+                    tabIndex={0}
+                    role="button"
+                    onClick={() => onRowClick(row)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onRowClick(row);
+                      }
+                    }}
+                  >
                     <TableCell className="text-right text-muted-foreground numeric">{(page - 1) * pageSize + index + 1}</TableCell>
                     <TableCell className="whitespace-nowrap numeric">{row.date}</TableCell>
                     <TableCell className="min-w-48 font-medium">{row.merchant || ""}</TableCell>

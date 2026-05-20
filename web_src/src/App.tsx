@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, ChevronsDown, ChevronsUp } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -10,9 +10,11 @@ import { LoadingState } from "@/components/dashboard/LoadingState";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { TopCategories } from "@/components/dashboard/TopCategories";
 import { TransactionTable } from "@/components/dashboard/TransactionTable";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { fetchDashboard, fetchMetadata } from "@/lib/api";
+import { useAnalytics } from "@/lib/analytics";
 import { formatCategorySelectionLabel, formatCurrency, formatDateInput, subtractMonths } from "@/lib/format";
-import type { DashboardData, Filters, Metadata, SortBy, SortDir } from "@/lib/types";
+import type { DashboardData, Filters, Metadata, SortBy, SortDir, Transaction } from "@/lib/types";
 
 const quickRanges = [
   { value: "last_week", label: "Last week" },
@@ -101,8 +103,20 @@ function applyDateRange(value: string, filters: Filters): Partial<Filters> {
   return { startDate: formatDateInput(start), endDate: formatDateInput(end), activeRange: value, page: 1 };
 }
 
+function transactionMeta(row: Transaction) {
+  return {
+    date: row.date,
+    merchantLength: row.merchant?.length || 0,
+    category: row.category || "uncategorized",
+    provider: row.provider || "none",
+    amountBucket:
+      Math.abs(row.amount) < 25 ? "under_25" : Math.abs(row.amount) < 100 ? "under_100" : Math.abs(row.amount) < 250 ? "under_250" : "250_plus",
+  };
+}
+
 export default function App() {
   const text = useMemo(rootText, []);
+  const analytics = useAnalytics("/");
   const [metadata, setMetadata] = useState<Metadata>({ categories: [], providers: [], merchants: [] });
   const [filters, setFilters] = useState<Filters>(() => ({ ...defaultFilters, ...applyDateRange("last_1y", defaultFilters) }));
   const [data, setData] = useState<DashboardData | null>(null);
@@ -111,6 +125,9 @@ export default function App() {
   const [lastSync, setLastSync] = useState("Ready");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [expandedCharts, setExpandedCharts] = useState<string[]>([]);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const lastZeroResultTrackedRef = useRef("");
 
   const monthRanges = useMemo(() => {
     const monthLabels = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" });
@@ -154,23 +171,174 @@ export default function App() {
     return () => window.clearTimeout(id);
   }, [filters, refresh]);
 
-  const updateFilters = (patch: Partial<Filters>) => {
-    setFilters((current) => ({ ...current, ...patch }));
-  };
+  useEffect(() => {
+    const query = filters.merchant.trim();
+    if (!query) return;
+    const id = window.setTimeout(() => {
+      analytics.trackSearchSubmitted(query, {
+        regex: filters.merchantRegex,
+        categoryCount: filters.categories.length,
+        providerSelected: Boolean(filters.provider),
+      });
+    }, 450);
+    return () => window.clearTimeout(id);
+  }, [analytics, filters.categories.length, filters.merchant, filters.merchantRegex, filters.provider]);
 
-  const toggleCategory = (category: string) => {
-    setFilters((current) => {
-      if (!category) return { ...current, categories: [], page: 1 };
-      const categories = current.categories.includes(category)
-        ? current.categories.filter((item) => item !== category)
-        : [...current.categories, category];
-      return { ...current, categories, page: 1 };
-    });
-  };
+  useEffect(() => {
+    const query = filters.merchant.trim();
+    if (!query) {
+      lastZeroResultTrackedRef.current = "";
+      return;
+    }
+    if ((data?.overview.transactions || 0) === 0 && query !== lastZeroResultTrackedRef.current) {
+      lastZeroResultTrackedRef.current = query;
+      analytics.trackSearchZeroResults(query, { regex: filters.merchantRegex, pageSize: filters.pageSize });
+    }
+  }, [analytics, data?.overview.transactions, filters.merchant, filters.merchantRegex, filters.pageSize]);
 
-  const setChartExpanded = (chart: string, expanded: boolean) => {
-    setExpandedCharts((current) => (expanded ? Array.from(new Set([...current, chart])) : current.filter((item) => item !== chart)));
-  };
+  const updateFilters = useCallback(
+    (patch: Partial<Filters>) => {
+      setFilters((current) => {
+        const next = { ...current, ...patch };
+
+        if (patch.merchant !== undefined && current.merchant && !String(next.merchant || "").trim()) {
+          analytics.trackSearchAbandoned(current.merchant, { reason: "cleared" });
+        }
+        if (patch.sortBy !== undefined || patch.sortDir !== undefined) {
+          analytics.trackSortChange(String(next.sortBy), String(next.sortDir), { pageSize: next.pageSize });
+        }
+
+        if (patch.activeRange !== undefined) {
+          analytics.trackFilterChange("date_range", next.activeRange || "custom", {
+            startDate: next.startDate || null,
+            endDate: next.endDate || null,
+          });
+        }
+        if (patch.startDate !== undefined) analytics.trackFilterChange("start_date", next.startDate || "");
+        if (patch.endDate !== undefined) analytics.trackFilterChange("end_date", next.endDate || "");
+        if (patch.provider !== undefined) analytics.trackFilterChange("provider", next.provider || "all");
+        if (patch.minAmount !== undefined) analytics.trackFilterChange("min_amount", next.minAmount || "");
+        if (patch.maxAmount !== undefined) analytics.trackFilterChange("max_amount", next.maxAmount || "");
+        if (patch.pageSize !== undefined) analytics.trackSettingsChange("page_size", next.pageSize);
+        if (patch.period !== undefined) analytics.trackSettingsChange("period", next.period);
+        if (patch.merchantRegex !== undefined) analytics.trackSettingsChange("merchant_regex", next.merchantRegex);
+        if (patch.includeHouse !== undefined) analytics.trackSettingsChange("include_house", next.includeHouse);
+
+        return next;
+      });
+    },
+    [analytics],
+  );
+
+  const toggleCategory = useCallback(
+    (category: string) => {
+      setFilters((current) => {
+        if (!category) {
+          analytics.trackCategorySelection("all", current.categories.length !== 0);
+          return { ...current, categories: [], page: 1 };
+        }
+        const selected = current.categories.includes(category);
+        analytics.trackCategorySelection(category, !selected);
+        const categories = selected ? current.categories.filter((item) => item !== category) : [...current.categories, category];
+        return { ...current, categories, page: 1 };
+      });
+    },
+    [analytics],
+  );
+
+  const setChartExpanded = useCallback(
+    (chart: string, expanded: boolean) => {
+      setExpandedCharts((current) => (expanded ? Array.from(new Set([...current, chart])) : current.filter((item) => item !== chart)));
+      analytics.trackButtonClick("ChartCard", expanded ? "expand_chart" : "collapse_chart", { chart });
+    },
+    [analytics],
+  );
+
+  const handleRefresh = useCallback(() => {
+    analytics.trackButtonClick("AppLayout", "refresh_dashboard");
+    void refresh(filters);
+  }, [analytics, filters, refresh]);
+
+  const handleNav = useCallback(
+    (href: string, label: string) => {
+      analytics.trackNavigation("SidebarNav", href, { label });
+      if (mobileNavOpen) {
+        analytics.trackModalChange("MobileNavigation", false, { sheet: true, via: "nav_link" });
+        setMobileNavOpen(false);
+      }
+    },
+    [analytics, mobileNavOpen],
+  );
+
+  const handleMobileNavOpenChange = useCallback(
+    (open: boolean) => {
+      setMobileNavOpen(open);
+      analytics.trackModalChange("MobileNavigation", open, { sheet: true });
+    },
+    [analytics],
+  );
+
+  const handleAdvancedOpenChange = useCallback(
+    (open: boolean) => {
+      setAdvancedOpen(open);
+      analytics.trackButtonClick("FiltersPanel", open ? "open_advanced" : "close_advanced");
+    },
+    [analytics],
+  );
+
+  const handleReset = useCallback(() => {
+    analytics.trackButtonClick("FiltersPanel", "reset_filters");
+    setFilters({ ...defaultFilters });
+  }, [analytics]);
+
+  const handleRangeSelect = useCallback(
+    (range: string) => {
+      analytics.trackFilterChange("date_range", range);
+      setFilters((current) => ({ ...current, ...applyDateRange(range, current) }));
+    },
+    [analytics],
+  );
+
+  const handlePageChange = useCallback(
+    (page: number) => {
+      analytics.trackNavigation("TransactionTable", page > filters.page ? "next_page" : "previous_page", {
+        fromPage: filters.page,
+        toPage: page,
+      });
+      updateFilters({ page });
+    },
+    [analytics, filters.page, updateFilters],
+  );
+
+  const handlePageSizeChange = useCallback(
+    (pageSize: number) => {
+      updateFilters({ pageSize, page: 1 });
+    },
+    [updateFilters],
+  );
+
+  const handleSortChange = useCallback(
+    (sortBy: SortBy, sortDir: SortDir) => {
+      updateFilters({ sortBy, sortDir, page: 1 });
+    },
+    [updateFilters],
+  );
+
+  const handleTransactionClick = useCallback(
+    (row: Transaction) => {
+      analytics.trackTransactionDrilldown(transactionMeta(row));
+      analytics.trackModalChange("TransactionDrilldown", true, transactionMeta(row));
+      setSelectedTransaction(row);
+    },
+    [analytics],
+  );
+
+  const closeTransactionDialog = useCallback(() => {
+    if (selectedTransaction) {
+      analytics.trackModalChange("TransactionDrilldown", false, transactionMeta(selectedTransaction));
+    }
+    setSelectedTransaction(null);
+  }, [analytics, selectedTransaction]);
 
   const overview = data?.overview;
   const topMerchant = data?.merchants[0];
@@ -179,7 +347,18 @@ export default function App() {
   const categoryText = formatCategorySelectionLabel(filters.categories);
 
   return (
-    <AppLayout title={text.title} eyebrow={text.eyebrow} headline={text.headline} lede={text.lede} lastSync={lastSync} loading={loading} onRefresh={() => void refresh(filters)}>
+    <AppLayout
+      title={text.title}
+      eyebrow={text.eyebrow}
+      headline={text.headline}
+      lede={text.lede}
+      lastSync={lastSync}
+      loading={loading}
+      mobileNavOpen={mobileNavOpen}
+      onMobileNavOpenChange={handleMobileNavOpenChange}
+      onNavigate={handleNav}
+      onRefresh={handleRefresh}
+    >
       <section id="overview" className="grid gap-4">
         <FiltersPanel
           filters={filters}
@@ -188,11 +367,11 @@ export default function App() {
           ranges={quickRanges}
           monthRanges={monthRanges}
           advancedOpen={advancedOpen}
-          onAdvancedOpenChange={setAdvancedOpen}
+          onAdvancedOpenChange={handleAdvancedOpenChange}
           onChange={updateFilters}
           onCategoryToggle={toggleCategory}
-          onRangeSelect={(range) => setFilters((current) => ({ ...current, ...applyDateRange(range, current) }))}
-          onReset={() => setFilters({ ...defaultFilters })}
+          onRangeSelect={handleRangeSelect}
+          onReset={handleReset}
         />
 
         {error ? (
@@ -223,11 +402,27 @@ export default function App() {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setExpandedCharts(["alltime", "period", "category"])}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      analytics.trackButtonClick("ChartsToolbar", "expand_all_charts");
+                      setExpandedCharts(["alltime", "period", "category"]);
+                    }}
+                  >
                     <ChevronsDown className="h-4 w-4" />
                     Expand all
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setExpandedCharts([])}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      analytics.trackButtonClick("ChartsToolbar", "collapse_all_charts");
+                      setExpandedCharts([]);
+                    }}
+                  >
                     <ChevronsUp className="h-4 w-4" />
                     Collapse all
                   </Button>
@@ -272,14 +467,54 @@ export default function App() {
                 sortBy={filters.sortBy}
                 sortDir={filters.sortDir}
                 loading={loading}
-                onPageChange={(page) => updateFilters({ page })}
-                onPageSizeChange={(pageSize) => updateFilters({ pageSize, page: 1 })}
-                onSortChange={(sortBy: SortBy, sortDir: SortDir) => updateFilters({ sortBy, sortDir, page: 1 })}
+                onPageChange={handlePageChange}
+                onPageSizeChange={handlePageSizeChange}
+                onSortChange={handleSortChange}
+                onRowClick={handleTransactionClick}
               />
             </section>
           </>
         )}
       </section>
+
+      <Dialog open={Boolean(selectedTransaction)} onOpenChange={(open) => {
+        if (!open) closeTransactionDialog();
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Transaction detail</DialogTitle>
+            <DialogDescription>{selectedTransaction?.merchant || "Transaction"}</DialogDescription>
+          </DialogHeader>
+          {selectedTransaction ? (
+            <div className="grid gap-3 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Date</p>
+                  <p className="mt-1 font-medium">{selectedTransaction.date}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Amount</p>
+                  <p className="mt-1 font-medium numeric">{formatCurrency(selectedTransaction.amount)}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Category</p>
+                  <p className="mt-1 font-medium">{selectedTransaction.category || "uncategorized"}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Provider</p>
+                  <p className="mt-1 font-medium">{selectedTransaction.provider || "-"}</p>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Description</p>
+                <p className="mt-1 text-muted-foreground">{selectedTransaction.description || "No description"}</p>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

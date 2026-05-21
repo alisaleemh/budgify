@@ -382,6 +382,10 @@ export default function App() {
           </Alert>
         ) : null}
 
+        <section id="assistant" className="grid gap-4">
+          <AssistantPanel />
+        </section>
+
         {!data && loading ? (
           <LoadingState />
         ) : (
@@ -473,6 +477,7 @@ export default function App() {
                 onRowClick={handleTransactionClick}
               />
             </section>
+
           </>
         )}
       </section>

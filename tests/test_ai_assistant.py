@@ -137,11 +137,13 @@ class FakeProvider:
                         "type": "function",
                         "function": {
                             "name": "getSpendByMerchant",
-                            "arguments": json.dumps({
-                                "merchant": "Costco",
-                                "start_date": "2026-01-01",
-                                "end_date": "2026-05-18",
-                            }),
+                            "arguments": json.dumps(
+                                {
+                                    "merchant": "Costco",
+                                    "start_date": "2026-01-01",
+                                    "end_date": "2026-05-18",
+                                }
+                            ),
                         },
                     }
                 ],
@@ -159,6 +161,8 @@ def test_assistant_tool_call_loop_uses_fake_provider(tmp_path):
     assert result.answer == "Costco year-to-date spend is $300.00."
     assert result.data_used[0]["tool"] == "getSpendByMerchant"
     assert result.data_used[0]["result"]["merchants"][0]["total"] == 300.0
+    assert result.cards[0]["kind"] == "metric"
+    assert result.tables[0]["title"] == "Merchant breakdown"
     assert provider.calls == 2
 
 
@@ -194,6 +198,8 @@ def test_assistant_endpoint_with_fake_provider(tmp_path, monkeypatch):
 
     assert body["answer"] == "Costco year-to-date spend is $300.00."
     assert body["dataUsed"][0]["tool"] == "getSpendByMerchant"
+    assert body["cards"][0]["kind"] == "metric"
+    assert body["tables"][0]["title"] == "Merchant breakdown"
 
 
 def test_assistant_endpoint_rejects_missing_question(tmp_path):

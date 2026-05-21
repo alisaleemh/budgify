@@ -369,7 +369,15 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                 _json_response(self, {"error": "question is required"}, status=400)
                 return
             result = query_finance_assistant(self.db_path, question)
-            _json_response(self, {"answer": result.answer, "dataUsed": result.data_used})
+            _json_response(
+                self,
+                {
+                    "answer": result.answer,
+                    "cards": result.cards,
+                    "tables": result.tables,
+                    "dataUsed": result.data_used,
+                },
+            )
         except ToolValidationError as exc:
             _json_response(self, {"error": str(exc)}, status=400)
         except ValueError as exc:
@@ -401,7 +409,6 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
             _json_response(self, {"accepted": len(events)}, status=202)
             return
         _json_response(self, {"error": "not found"}, status=404)
-
     def _handle_static(self, raw_path: str) -> None:
         static_root = Path(self.static_dir).resolve()
         path = raw_path or "/"

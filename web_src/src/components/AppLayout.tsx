@@ -11,6 +11,9 @@ interface AppLayoutProps {
   lede: string;
   lastSync: string;
   loading: boolean;
+  mobileNavOpen: boolean;
+  onMobileNavOpenChange: (open: boolean) => void;
+  onNavigate: (href: string, label: string) => void;
   onRefresh: () => void;
   children: React.ReactNode;
 }
@@ -22,11 +25,16 @@ const navItems = [
   { href: "#transactions", label: "Transactions", icon: Table2 },
 ];
 
-function SidebarNav() {
+function SidebarNav({ onNavigate }: { onNavigate: (href: string, label: string) => void }) {
   return (
     <nav className="grid gap-1">
       {navItems.map((item) => (
-        <a key={item.href} href={item.href} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
+        <a
+          key={item.href}
+          href={item.href}
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+          onClick={() => onNavigate(item.href, item.label)}
+        >
           <item.icon className="h-4 w-4" />
           {item.label}
         </a>
@@ -35,7 +43,19 @@ function SidebarNav() {
   );
 }
 
-export function AppLayout({ title, eyebrow, headline, lede, lastSync, loading, onRefresh, children }: AppLayoutProps) {
+export function AppLayout({
+  title,
+  eyebrow,
+  headline,
+  lede,
+  lastSync,
+  loading,
+  mobileNavOpen,
+  onMobileNavOpenChange,
+  onNavigate,
+  onRefresh,
+  children,
+}: AppLayoutProps) {
   return (
     <div className="dashboard-shell">
       <div className="dashboard-main">
@@ -45,7 +65,7 @@ export function AppLayout({ title, eyebrow, headline, lede, lastSync, loading, o
             <h1 className="mt-2 text-xl font-semibold tracking-normal">{title}</h1>
           </div>
           <Separator className="my-4" />
-          <SidebarNav />
+          <SidebarNav onNavigate={onNavigate} />
           <div className="absolute bottom-4 left-4 right-4 rounded-xl border bg-zinc-50 p-3">
             <p className="text-xs text-muted-foreground">Database</p>
             <p className="mt-1 truncate text-sm font-medium">budgify.db</p>
@@ -71,9 +91,9 @@ export function AppLayout({ title, eyebrow, headline, lede, lastSync, loading, o
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>Refresh now</TooltipContent>
-                  </Tooltip>
+                </Tooltip>
                 </TooltipProvider>
-                <Sheet>
+                <Sheet open={mobileNavOpen} onOpenChange={onMobileNavOpenChange}>
                   <SheetTrigger asChild>
                     <Button type="button" variant="outline" size="icon" className="lg:hidden" aria-label="Open navigation">
                       <Menu className="h-4 w-4" />
@@ -84,7 +104,7 @@ export function AppLayout({ title, eyebrow, headline, lede, lastSync, loading, o
                       <SheetTitle>{title}</SheetTitle>
                     </SheetHeader>
                     <div className="mt-6">
-                      <SidebarNav />
+                      <SidebarNav onNavigate={onNavigate} />
                     </div>
                   </SheetContent>
                 </Sheet>

@@ -16,6 +16,14 @@ import hmac
 from transaction_tracker.ai.assistant import query_finance_assistant
 from transaction_tracker.ai.config import ai_status
 from transaction_tracker.ai.finance_tools import ToolValidationError
+from transaction_tracker.analytics import (
+    analytics_common_filters_sorts,
+    analytics_feature_usage_counts,
+    analytics_search_trends,
+    analytics_session_flows,
+    analytics_top_events,
+    append_analytics_events,
+)
 from transaction_tracker.database import (
     list_categories,
     list_providers,
@@ -93,6 +101,26 @@ def _parse_int(value: str | None, default: int | None = None) -> int | None:
     return int(value)
 
 
+def _parse_bool(value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+    text = value.strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _parse_float_env(value: str | None, default: float) -> float:
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
 def _get_ui_text() -> dict[str, str]:
     app_name = os.environ.get("BUDGIFY_UI_APP_NAME", "Budgify").strip() or "Budgify"
     home_name = os.environ.get("BUDGIFY_UI_HOME_NAME", DEFAULT_UI_HOME_NAME).strip() or DEFAULT_UI_HOME_NAME
@@ -122,9 +150,20 @@ def _get_ui_text() -> dict[str, str]:
     }
 
 
-def _render_index_html(html_text: str) -> str:
+def _get_analytics_text(handler: "BudgifyWebHandler" | None = None) -> dict[str, str]:
+    enabled = handler.analytics_enabled if handler is not None else _parse_bool(os.environ.get("BUDGIFY_ANALYTICS_ENABLED"), True)
+    sampling_rate = handler.analytics_sampling_rate if handler is not None else _parse_float_env(os.environ.get("BUDGIFY_ANALYTICS_SAMPLING_RATE"), 1.0)
+    dev_logging = handler.analytics_dev_logging if handler is not None else _parse_bool(os.environ.get("BUDGIFY_ANALYTICS_DEV_LOGGING"), False)
+    return {
+        "{{ANALYTICS_ENABLED}}": "true" if enabled else "false",
+        "{{ANALYTICS_SAMPLING_RATE}}": str(max(0.0, min(float(sampling_rate), 1.0))),
+        "{{ANALYTICS_DEV_LOGGING}}": "true" if dev_logging else "false",
+    }
+
+
+def _render_index_html(html_text: str, handler: "BudgifyWebHandler" | None = None) -> str:
     rendered = html_text
-    for token, value in _get_ui_text().items():
+    for token, value in {**_get_ui_text(), **_get_analytics_text(handler)}.items():
         rendered = rendered.replace(token, value)
     return rendered
 
@@ -162,6 +201,9 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
     static_dir = STATIC_DIR
     password_file: str | None = None
     password_key: str = DEFAULT_PASSWORD_KEY
+    analytics_enabled = True
+    analytics_sampling_rate = 1.0
+    analytics_dev_logging = False
 
     def log_message(self, format: str, *args: Any) -> None:
         return
@@ -182,6 +224,9 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/assistant/query":
             self._handle_assistant_query()
             return
+        if parsed.path.startswith("/api/"):
+            self._handle_post_api(parsed)
+            return
         _json_response(self, {"error": "not found"}, status=404)
 
     def _handle_api(self, parsed) -> None:
@@ -201,6 +246,30 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                     "merchants": list_unique_merchants(self.db_path),
                 }
                 _json_response(self, payload)
+                return
+
+            if path == "/api/analytics/top-events":
+                limit = _parse_int(_get_param(query, "limit"), default=10) or 10
+                _json_response(self, analytics_top_events(self.db_path, limit=limit))
+                return
+
+            if path == "/api/analytics/session-flows":
+                limit = _parse_int(_get_param(query, "limit"), default=20) or 20
+                _json_response(self, analytics_session_flows(self.db_path, limit=limit))
+                return
+
+            if path == "/api/analytics/search-trends":
+                limit = _parse_int(_get_param(query, "limit"), default=20) or 20
+                _json_response(self, analytics_search_trends(self.db_path, limit=limit))
+                return
+
+            if path == "/api/analytics/feature-usage":
+                limit = _parse_int(_get_param(query, "limit"), default=20) or 20
+                _json_response(self, analytics_feature_usage_counts(self.db_path, limit=limit))
+                return
+
+            if path == "/api/analytics/filters-sorts":
+                _json_response(self, analytics_common_filters_sorts(self.db_path))
                 return
 
             if path == "/api/overview":
@@ -310,6 +379,29 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             _json_response(self, {"error": str(exc)}, status=500)
 
+    def _handle_post_api(self, parsed) -> None:
+        if parsed.path == "/api/analytics/events":
+            if not self.analytics_enabled:
+                _json_response(self, {"accepted": 0}, status=202)
+                return
+            length = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(length) if length > 0 else b""
+            try:
+                payload = json.loads(body.decode("utf-8") or "{}")
+            except json.JSONDecodeError:
+                _json_response(self, {"error": "invalid json"}, status=400)
+                return
+            events = payload.get("events", payload)
+            if not isinstance(events, list):
+                _json_response(self, {"error": "events must be a list"}, status=400)
+                return
+            append_analytics_events(self.db_path, events)
+            if self.analytics_dev_logging:
+                print(f"[analytics] stored {len(events)} event(s)")
+            _json_response(self, {"accepted": len(events)}, status=202)
+            return
+        _json_response(self, {"error": "not found"}, status=404)
+
     def _handle_static(self, raw_path: str) -> None:
         static_root = Path(self.static_dir).resolve()
         path = raw_path or "/"
@@ -325,7 +417,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
 
         content_type = _guess_content_type(resolved)
         if resolved.name == "index.html":
-            body = _render_index_html(resolved.read_text(encoding="utf-8")).encode("utf-8")
+            body = _render_index_html(resolved.read_text(encoding="utf-8"), self).encode("utf-8")
         else:
             body = resolved.read_bytes()
         self.send_response(200)
@@ -420,6 +512,24 @@ def main() -> None:
         default=os.environ.get("BUDGIFY_PASSWORD_KEY", DEFAULT_PASSWORD_KEY),
         help="Encryption key for password file",
     )
+    parser.add_argument(
+        "--analytics-enabled",
+        action=argparse.BooleanOptionalAction,
+        default=_parse_bool(os.environ.get("BUDGIFY_ANALYTICS_ENABLED"), True),
+        help="Enable analytics persistence and API endpoints",
+    )
+    parser.add_argument(
+        "--analytics-sampling-rate",
+        type=float,
+        default=_parse_float_env(os.environ.get("BUDGIFY_ANALYTICS_SAMPLING_RATE"), 1.0),
+        help="Fraction of sessions to sample (0.0 to 1.0)",
+    )
+    parser.add_argument(
+        "--analytics-dev-logging",
+        action=argparse.BooleanOptionalAction,
+        default=_parse_bool(os.environ.get("BUDGIFY_ANALYTICS_DEV_LOGGING"), False),
+        help="Print analytics event ingestion logs",
+    )
     args = parser.parse_args()
 
     handler = type(
@@ -430,6 +540,9 @@ def main() -> None:
             "static_dir": STATIC_DIR,
             "password_file": args.password_file,
             "password_key": args.password_key,
+            "analytics_enabled": args.analytics_enabled,
+            "analytics_sampling_rate": max(0.0, min(float(args.analytics_sampling_rate), 1.0)),
+            "analytics_dev_logging": args.analytics_dev_logging,
         },
     )
     server = ThreadingHTTPServer((args.host, args.port), handler)

@@ -46,6 +46,10 @@ categories:
 
 output_dir: "./data"
 db_path: "budgify.db"
+analytics:
+  enabled: true
+  sampling_rate: 1.0
+  dev_logging: false
 
 google:
   service_account_file: "/path/to/service-account.json"

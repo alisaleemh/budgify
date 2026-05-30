@@ -77,7 +77,70 @@ export interface AssistantStatus {
   apiKeyPresent: boolean;
 }
 
+export interface AssistantMetricCard {
+  kind: "metric";
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "default" | "warning";
+}
+
+export interface AssistantComparisonCard {
+  kind: "comparison";
+  title: string;
+  detail?: string;
+  leftLabel: string;
+  leftValue: string;
+  leftDetail?: string;
+  rightLabel: string;
+  rightValue: string;
+  rightDetail?: string;
+  deltaLabel?: string;
+  deltaValue?: string;
+  trend: "up" | "down" | "flat";
+}
+
+export interface AssistantListItem {
+  label: string;
+  value?: string;
+  detail?: string;
+}
+
+export interface AssistantListCard {
+  kind: "list";
+  title: string;
+  detail?: string;
+  items: AssistantListItem[];
+}
+
+export interface AssistantChipCard {
+  kind: "chips";
+  title: string;
+  detail?: string;
+  chips: string[];
+}
+
+export type AssistantCard = AssistantMetricCard | AssistantComparisonCard | AssistantListCard | AssistantChipCard;
+
+export interface AssistantDataUse {
+  tool: string;
+  arguments: Record<string, unknown>;
+  result: Record<string, unknown>;
+}
+
+export interface AssistantTable {
+  title: string;
+  note?: string;
+  columns: string[];
+  rows: Record<string, string | number | boolean | null | undefined>[];
+}
+
 export interface AssistantResponse {
   answer: string;
-  dataUsed: unknown[];
+  summary?: string;
+  bullets?: string[];
+  followup?: string;
+  cards: AssistantCard[];
+  tables: AssistantTable[];
+  dataUsed: AssistantDataUse[];
 }

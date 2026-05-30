@@ -6,11 +6,7 @@ from datetime import date
 from statistics import mean, pstdev
 from typing import Any, Callable
 
-from transaction_tracker.database import (
-    query_transactions,
-    summarize_by_category,
-    summarize_by_merchant,
-)
+from transaction_tracker.database import query_transactions, summarize_by_category, summarize_by_merchant
 
 RAW_LIMIT = 50
 AGGREGATE_LIMIT = 20
@@ -277,7 +273,7 @@ def _get_spend_by_merchant(db_path: str, args: dict[str, Any]) -> dict[str, Any]
 
 def _group_transactions(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str, Any]] = {}
-    output_key = "transactions" if key == "merchant" else "transactions"
+    output_key = "transactions"
     for row in rows:
         label = row.get(key) or "uncategorized"
         item = grouped.setdefault(str(label), {key: label, "total": 0.0, output_key: 0})
@@ -292,12 +288,14 @@ def _compare_spend_periods(db_path: str, args: dict[str, Any]) -> dict[str, Any]
         raise ToolValidationError(f"Unsupported argument: {sorted(unknown)[0]}")
     period_a = _period_args(args.get("period_a"), "period_a")
     period_b = _period_args(args.get("period_b"), "period_b")
-    shared = _filters({
-        "category": args.get("category"),
-        "categories": args.get("categories"),
-        "merchant": args.get("merchant"),
-        "provider": args.get("provider"),
-    })
+    shared = _filters(
+        {
+            "category": args.get("category"),
+            "categories": args.get("categories"),
+            "merchant": args.get("merchant"),
+            "provider": args.get("provider"),
+        }
+    )
     return {"period_a": _period_result(db_path, period_a, shared), "period_b": _period_result(db_path, period_b, shared)}
 
 
@@ -340,14 +338,16 @@ def _get_recurring_transactions(db_path: str, args: dict[str, Any]) -> dict[str,
         if len(months) < 2 or len(merchant_rows) < 2:
             continue
         amounts = [float(row["amount"]) for row in merchant_rows]
-        recurring.append({
-            "merchant": merchant,
-            "transactions": len(merchant_rows),
-            "months": sorted(months),
-            "average": mean(amounts),
-            "total": sum(amounts),
-            "latest_date": merchant_rows[-1]["date"],
-        })
+        recurring.append(
+            {
+                "merchant": merchant,
+                "transactions": len(merchant_rows),
+                "months": sorted(months),
+                "average": mean(amounts),
+                "total": sum(amounts),
+                "latest_date": merchant_rows[-1]["date"],
+            }
+        )
     recurring.sort(key=lambda item: (len(item["months"]), item["total"]), reverse=True)
     return {"recurring": recurring[:AGGREGATE_LIMIT], "truncated": len(recurring) > AGGREGATE_LIMIT}
 

@@ -7,6 +7,7 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 from transaction_tracker import web
+from transaction_tracker.ai.costs import ModelPricing
 from transaction_tracker.ai.beta import (
     BetaCitation,
     ask_beta_question,
@@ -35,41 +36,56 @@ def _seed_beta_transactions(db_path):
     append_transactions(txs, str(db_path), categories)
 
 
+@pytest.fixture(autouse=True)
+def _stub_model_pricing(monkeypatch):
+    monkeypatch.setattr(
+        "transaction_tracker.ai.costs.get_model_pricing",
+        lambda model: ModelPricing(model=model, prompt_per_token=0.00000225, completion_per_token=0.00000275),
+    )
+
+
 class FakeBetaProvider:
     def __init__(self):
         self.calls = 0
+        self.config = type("Config", (), {"model": "zai-glm-4.7"})()
 
-    def complete(self, messages, *, tools=None, tool_choice=None):
+    def complete_response(self, messages, *, tools=None, tool_choice=None):
         self.calls += 1
         context_message = next(message for message in messages if message["role"] == "system" and message["content"].startswith("Budgify MCP context"))
         context = json.loads(context_message["content"].split("Budgify MCP context:\n", 1)[1])
         tx_id = context["transactions"][0]["id"]
         return {
-            "role": "assistant",
-            "content": json.dumps(
-                {
-                    "summary": "Recent spending is led by groceries.",
-                    "insights": [
-                        {
-                            "title": "Groceries led recent spend",
-                            "body": "Fresh Market is the largest recent transaction in the MCP context.",
-                            "why": "This transaction is in the latest briefing range.",
-                            "citationIds": [tx_id, "not-a-real-id"],
-                        }
-                    ],
-                    "recommendations": [
-                        {
-                            "title": "Review grocery plan",
-                            "body": "Check whether the larger grocery run was expected.",
-                            "estimated": False,
-                            "citationIds": [tx_id],
-                        }
-                    ],
-                    "citations": [tx_id],
-                    "estimated": False,
-                }
-            ),
+            "message": {
+                "role": "assistant",
+                "content": json.dumps(
+                    {
+                        "summary": "Recent spending is led by groceries.",
+                        "insights": [
+                            {
+                                "title": "Groceries led recent spend",
+                                "body": "Fresh Market is the largest recent transaction in the MCP context.",
+                                "why": "This transaction is in the latest briefing range.",
+                                "citationIds": [tx_id, "not-a-real-id"],
+                            }
+                        ],
+                        "recommendations": [
+                            {
+                                "title": "Review grocery plan",
+                                "body": "Check whether the larger grocery run was expected.",
+                                "estimated": False,
+                                "citationIds": [tx_id],
+                            }
+                        ],
+                        "citations": [tx_id],
+                        "estimated": False,
+                    }
+                ),
+            },
+            "usage": {"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70},
         }
+
+    def complete(self, messages, *, tools=None, tool_choice=None):
+        return self.complete_response(messages, tools=tools, tool_choice=tool_choice)["message"]
 
 
 def test_beta_briefing_uses_mcp_context_and_filters_citations(tmp_path):
@@ -84,6 +100,8 @@ def test_beta_briefing_uses_mcp_context_and_filters_citations(tmp_path):
     assert result.citations
     assert result.insights[0].citationIds == [result.citations[0].id]
     assert result.estimated is False
+    assert result.sessionCost["model"] == "zai-glm-4.7"
+    assert result.sessionCost["totalTokens"] == 70
 
 
 def test_beta_briefing_cache_skips_llm_until_transactions_change(tmp_path):
@@ -97,6 +115,8 @@ def test_beta_briefing_cache_skips_llm_until_transactions_change(tmp_path):
 
     assert first.summary == second.summary
     assert provider.calls == 1
+    assert second.cacheHit is True
+    assert second.sessionCost["cached"] is True
 
     append_transactions(
         [Transaction(date=date(2026, 5, 12), description="Groceries", merchant="Fresh Market", amount=12.0, provider="amex")],

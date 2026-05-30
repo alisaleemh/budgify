@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import dataclass, field
+import uuid
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from typing import Any
 
+from transaction_tracker.ai.costs import build_session_cost
 from transaction_tracker.ai.providers import ChatCompletionsProvider, get_chat_provider_from_env
 from transaction_tracker.mcp_server import (
     _compare_periods_impl,
@@ -93,6 +95,9 @@ class BetaBriefing:
     citations: list[BetaCitation]
     dataFreshness: dict[str, Any]
     context: dict[str, Any]
+    sessionCost: dict[str, Any] | None = None
+    requestId: str = ""
+    cacheHit: bool = False
     estimated: bool = True
 
     def as_dict(self) -> dict[str, Any]:
@@ -103,6 +108,9 @@ class BetaBriefing:
             "citations": [item.__dict__ for item in self.citations],
             "dataFreshness": self.dataFreshness,
             "context": self.context,
+            "sessionCost": self.sessionCost,
+            "requestId": self.requestId,
+            "cacheHit": self.cacheHit,
             "estimated": self.estimated,
         }
 
@@ -117,7 +125,7 @@ def generate_beta_briefing(
     cache_key = ("briefing", db_path, anchor.isoformat(), fingerprint)
     cached = _cache_get(cache_key)
     if cached is not None:
-        return cached
+        return _mark_cached(cached)
     start = anchor - timedelta(days=30)
     prior_start = start - timedelta(days=30)
     prior_end = start - timedelta(days=1)
@@ -144,7 +152,7 @@ def ask_beta_question(
     cache_key = ("ask", db_path, anchor.isoformat(), cleaned, fingerprint)
     cached = _cache_get(cache_key)
     if cached is not None:
-        return cached
+        return _mark_cached(cached)
     start = anchor - timedelta(days=120)
     prior_start = start - timedelta(days=120)
     prior_end = start - timedelta(days=1)
@@ -224,14 +232,19 @@ def _run_beta_ai(
 ) -> BetaBriefing:
     citation_lookup = _citation_lookup(context.get("transactions", []))
     ai_provider = provider or get_chat_provider_from_env()
-    message = ai_provider.complete(
+    response = _complete_response(
+        ai_provider,
         [
             {"role": "system", "content": BETA_SYSTEM_PROMPT},
             {"role": "system", "content": f"Budgify MCP context:\n{json.dumps(context, default=str)}"},
             {"role": "user", "content": user_prompt},
-        ]
+        ],
     )
+    message = response.get("message") or {}
     parsed = parse_beta_response(str(message.get("content") or ""), citation_lookup)
+    usage = _usage_payload(response)
+    model_id = getattr(getattr(ai_provider, "config", None), "model", "")
+    request_id = str(uuid.uuid4())
     return BetaBriefing(
         summary=parsed["summary"],
         insights=parsed["insights"],
@@ -243,6 +256,16 @@ def _run_beta_ai(
             "transactionCount": context["profile"].get("transactionCount", 0),
             "tools": context["tools"],
         },
+        sessionCost=build_session_cost(
+            request_id=request_id,
+            source="beta",
+            model_id=model_id,
+            prompt_tokens=int(usage.get("prompt_tokens") or 0),
+            completion_tokens=int(usage.get("completion_tokens") or 0),
+            cached=False,
+            cached_tokens=int((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0),
+        ),
+        requestId=request_id,
         estimated=parsed["estimated"],
     )
 
@@ -258,6 +281,25 @@ def _cache_set(key: tuple[Any, ...], value: BetaBriefing) -> BetaBriefing:
             _BETA_CACHE.pop(next(iter(_BETA_CACHE)))
         _BETA_CACHE[key] = value
     return value
+
+
+def _mark_cached(value: BetaBriefing) -> BetaBriefing:
+    session_cost = dict(value.sessionCost or {})
+    if session_cost:
+        session_cost["cached"] = True
+    return replace(value, cacheHit=True, sessionCost=session_cost or value.sessionCost)
+
+
+def _complete_response(provider: ChatCompletionsProvider, messages: list[dict[str, Any]]) -> dict[str, Any]:
+    if hasattr(provider, "complete_response"):
+        return provider.complete_response(messages)
+    message = provider.complete(messages)
+    return {"message": message, "usage": {}}
+
+
+def _usage_payload(response: dict[str, Any]) -> dict[str, Any]:
+    usage = response.get("usage")
+    return usage if isinstance(usage, dict) else {}
 
 
 def _beta_context(db_path: str, start: date, end: date, prior_start: date, prior_end: date) -> dict[str, Any]:

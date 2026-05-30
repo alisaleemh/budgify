@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from transaction_tracker.ai.costs import build_session_cost
 from transaction_tracker.ai.finance_tools import ToolValidationError, call_finance_tool, tool_schemas
 from transaction_tracker.ai.providers import ChatCompletionsProvider, get_chat_provider_from_env
 
@@ -42,6 +44,7 @@ class AssistantResult:
     data_used: list[dict[str, Any]] = field(default_factory=list)
     cards: list[dict[str, Any]] = field(default_factory=list)
     tables: list[dict[str, Any]] = field(default_factory=list)
+    sessionCost: dict[str, Any] | None = None
 
 
 def query_finance_assistant(
@@ -53,15 +56,22 @@ def query_finance_assistant(
     if not cleaned:
         raise ValueError("question is required")
     provider = provider or get_chat_provider_from_env()
+    request_id = str(uuid.uuid4())
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "system", "content": f"Today's date is {date.today().isoformat()}. Use it for relative date ranges."},
         {"role": "user", "content": cleaned},
     ]
     data_used: list[dict[str, Any]] = []
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
 
     for _ in range(MAX_TOOL_ROUNDS):
-        message = provider.complete(messages, tools=tool_schemas(), tool_choice="auto")
+        response = provider.complete_response(messages, tools=tool_schemas(), tool_choice="auto") if hasattr(provider, "complete_response") else {"message": provider.complete(messages, tools=tool_schemas(), tool_choice="auto"), "usage": {}}
+        message = response.get("message") or {}
+        usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
+        total_prompt_tokens += int(usage.get("prompt_tokens") or 0)
+        total_completion_tokens += int(usage.get("completion_tokens") or 0)
         tool_calls = message.get("tool_calls") or []
         if not tool_calls:
             cards, tables = _build_structured_blocks(data_used)
@@ -74,6 +84,15 @@ def query_finance_assistant(
                 data_used=data_used,
                 cards=cards,
                 tables=tables,
+                sessionCost=build_session_cost(
+                    request_id=request_id,
+                    source="assistant",
+                    model_id=getattr(getattr(provider, "config", None), "model", ""),
+                    prompt_tokens=total_prompt_tokens,
+                    completion_tokens=total_completion_tokens,
+                    cached=False,
+                    cached_tokens=0,
+                ),
             )
         messages.append(_assistant_tool_message(message))
         for call in tool_calls:
@@ -99,7 +118,11 @@ def query_finance_assistant(
             "content": "Tool limit reached. Give a concise final answer using only the tool results above.",
         }
     )
-    message = provider.complete(messages)
+    response = provider.complete_response(messages) if hasattr(provider, "complete_response") else {"message": provider.complete(messages), "usage": {}}
+    message = response.get("message") or {}
+    usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
+    total_prompt_tokens += int(usage.get("prompt_tokens") or 0)
+    total_completion_tokens += int(usage.get("completion_tokens") or 0)
     cards, tables = _build_structured_blocks(data_used)
     compact = _parse_compact_response(message)
     return AssistantResult(
@@ -110,6 +133,15 @@ def query_finance_assistant(
         data_used=data_used,
         cards=cards,
         tables=tables,
+        sessionCost=build_session_cost(
+            request_id=request_id,
+            source="assistant",
+            model_id=getattr(getattr(provider, "config", None), "model", ""),
+            prompt_tokens=total_prompt_tokens,
+            completion_tokens=total_completion_tokens,
+            cached=False,
+            cached_tokens=0,
+        ),
     )
 
 

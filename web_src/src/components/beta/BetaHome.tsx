@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, HelpCircle, Loader2, ShieldCheck, Sparkles, X } from "lucide-react";
-import { askBeta, fetchBetaBriefing } from "@/lib/api";
+import { askBeta, fetchAssistantStatus, fetchBetaBriefing } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
-import type { BetaBriefing, BetaCitation, BetaInsight, BetaRecommendation } from "@/lib/types";
+import type { AssistantStatus, BetaBriefing, BetaCitation, BetaInsight, BetaRecommendation } from "@/lib/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { SessionCostCard } from "@/components/session/SessionCostCard";
+import { recordSessionCost, useSessionCostLedger } from "@/lib/session-cost";
 
 const examples = [
   "Can I afford a $5,000 trip in September?",
@@ -24,12 +26,18 @@ export function BetaHome() {
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionStates, setActionStates] = useState<Record<string, "approved" | "ignored">>({});
+  const [status, setStatus] = useState<AssistantStatus | null>(null);
+  const { summary } = useSessionCostLedger();
 
   useEffect(() => {
+    fetchAssistantStatus().then(setStatus).catch(() => setStatus(null));
     setLoading(true);
     fetchBetaBriefing()
       .then((payload) => {
         setBriefing(payload);
+        if (payload.sessionCost && !payload.sessionCost.cached) {
+          recordSessionCost(payload.sessionCost);
+        }
         setError(null);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Unable to load AI beta briefing"))
@@ -50,7 +58,11 @@ export function BetaHome() {
     setAsking(true);
     setError(null);
     try {
-      setAnswer(await askBeta(cleaned));
+      const payload = await askBeta(cleaned);
+      if (payload.sessionCost && !payload.sessionCost.cached) {
+        recordSessionCost(payload.sessionCost);
+      }
+      setAnswer(payload);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to ask Budgify");
     } finally {
@@ -78,12 +90,12 @@ export function BetaHome() {
                   Budgify reads your ledger through MCP, explains what changed, and shows the transactions behind important claims.
                 </p>
               </div>
-              <div className="rounded-2xl border bg-zinc-950 px-4 py-3 text-sm text-white shadow-sm">
-                <p className="font-medium">Personal CFO mode</p>
-                <p className="mt-1 text-zinc-300">No money movement. Approval required for future actions.</p>
-              </div>
+            <div className="rounded-2xl border bg-zinc-950 px-4 py-3 text-sm text-white shadow-sm">
+              <p className="font-medium">Personal CFO mode</p>
+              <p className="mt-1 text-zinc-300">No money movement. Approval required for future actions.</p>
             </div>
-          </header>
+          </div>
+        </header>
 
           {error ? (
             <Alert variant="destructive">
@@ -135,6 +147,7 @@ export function BetaHome() {
         </section>
 
         <aside className="grid h-fit gap-4 lg:sticky lg:top-5">
+          <SessionCostCard summary={summary} status={status} title="Session cost" />
           <Card className="rounded-[1.5rem] border-zinc-200 bg-white/85 shadow-sm backdrop-blur">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

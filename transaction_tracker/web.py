@@ -387,6 +387,7 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                     "cards": result.cards,
                     "tables": result.tables,
                     "dataUsed": result.data_used,
+                    "sessionCost": result.sessionCost,
                 },
             )
         except ToolValidationError as exc:

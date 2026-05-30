@@ -37,7 +37,7 @@ class ChatCompletionsProvider:
             detail = f": {body}" if body else ""
             raise RuntimeError(f"AI provider returned HTTP {exc.code}{detail}") from exc
 
-    def complete(
+    def complete_response(
         self,
         messages: list[dict[str, Any]],
         *,
@@ -49,7 +49,16 @@ class ChatCompletionsProvider:
             payload["tools"] = tools
         if tool_choice is not None:
             payload["tool_choice"] = tool_choice
-        data = self._post(payload)
+        return self._post(payload)
+
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        data = self.complete_response(messages, tools=tools, tool_choice=tool_choice)
         choices = data.get("choices") or []
         if not choices:
             raise RuntimeError("AI provider returned no choices")

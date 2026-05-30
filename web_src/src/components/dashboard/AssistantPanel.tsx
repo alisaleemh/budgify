@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { askAssistant, fetchAssistantStatus } from "@/lib/api";
+import { recordSessionCost, sessionCostSummaryLabel, useSessionCostLedger } from "@/lib/session-cost";
 import { cn } from "@/lib/utils";
 import type {
   AssistantCard,
@@ -63,6 +64,12 @@ function uid() {
 function statusLabel(status: AssistantStatus | null) {
   if (!status) return "Checking AI";
   return `${status.provider} · ${status.model} · ${status.apiKeyPresent ? "ready" : "missing key"}`;
+}
+
+function rateLabel(status: AssistantStatus | null) {
+  const pricing = status?.pricing;
+  if (!pricing) return "pricing unavailable";
+  return `${pricing.model} · ${pricing.promptPerMillion.toFixed(2)}/M in · ${pricing.completionPerMillion.toFixed(2)}/M out`;
 }
 
 function normalizeTableKey(column: string) {
@@ -467,6 +474,7 @@ export function AssistantPanel() {
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottom = useRef(true);
+  const { summary: sessionSummary } = useSessionCostLedger();
 
   useEffect(() => {
     fetchAssistantStatus()
@@ -530,6 +538,9 @@ export function AssistantPanel() {
 
     try {
       const result = await askAssistant(text);
+      if (result.sessionCost && !result.sessionCost.cached) {
+        recordSessionCost(result.sessionCost);
+      }
       const streamingMessage: ChatMessage = {
         id: loadingMessage.id,
         role: "assistant",
@@ -579,7 +590,7 @@ export function AssistantPanel() {
   return (
     <Card id="assistant" className="overflow-hidden border-border/80 shadow-sm">
       <CardHeader className="gap-4 border-b bg-card/70">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 space-y-2">
             <div className="flex items-center gap-2">
               <Bot className="h-5 w-5 text-primary" />
@@ -589,6 +600,15 @@ export function AssistantPanel() {
               Scannable answers for spending, merchants, categories, trends, recurring charges, and outliers.
             </p>
             <div className="flex flex-wrap gap-2">{statusBadges}</div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline" className="rounded-full px-3 py-1">Session {sessionCostSummaryLabel(sessionSummary)}</Badge>
+              <Badge variant="secondary" className="rounded-full px-3 py-1">
+                {sessionSummary.aiCallCount} AI call{sessionSummary.aiCallCount === 1 ? "" : "s"}
+              </Badge>
+              <Badge variant="outline" className="rounded-full px-3 py-1">
+                {rateLabel(status)}
+              </Badge>
+            </div>
           </div>
           <Button type="button" variant="ghost" size="sm" onClick={clearConversation} className="rounded-full">
             <RotateCcw className="mr-2 h-4 w-4" />

@@ -3,6 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { SessionCostCard } from "@/components/session/SessionCostCard";
+import { useSessionCostLedger } from "@/lib/session-cost";
+import { fetchAssistantStatus } from "@/lib/api";
+import { useEffect, useState } from "react";
+import type { AssistantStatus } from "@/lib/types";
 
 interface AppLayoutProps {
   title: string;
@@ -57,6 +62,13 @@ export function AppLayout({
   onRefresh,
   children,
 }: AppLayoutProps) {
+  const { summary } = useSessionCostLedger();
+  const [status, setStatus] = useState<AssistantStatus | null>(null);
+
+  useEffect(() => {
+    fetchAssistantStatus().then(setStatus).catch(() => setStatus(null));
+  }, []);
+
   return (
     <div className="dashboard-shell">
       <div className="dashboard-main">
@@ -67,11 +79,14 @@ export function AppLayout({
           </div>
           <Separator className="my-4" />
           <SidebarNav onNavigate={onNavigate} />
-          <div className="absolute bottom-4 left-4 right-4 rounded-xl border bg-zinc-50 p-3">
-            <p className="text-xs text-muted-foreground">Database</p>
-            <p className="mt-1 truncate text-sm font-medium">budgify.db</p>
-            <p className="mt-3 text-xs text-muted-foreground">Last sync</p>
-            <p className="mt-1 truncate text-sm font-medium">{lastSync}</p>
+          <div className="absolute bottom-4 left-4 right-4 grid gap-3">
+            <div className="rounded-xl border bg-zinc-50 p-3">
+              <p className="text-xs text-muted-foreground">Database</p>
+              <p className="mt-1 truncate text-sm font-medium">budgify.db</p>
+              <p className="mt-3 text-xs text-muted-foreground">Last sync</p>
+              <p className="mt-1 truncate text-sm font-medium">{lastSync}</p>
+            </div>
+            <SessionCostCard summary={summary} status={status} title="Session cost" />
           </div>
         </aside>
 

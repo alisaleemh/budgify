@@ -8,6 +8,7 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 from transaction_tracker import web
+from transaction_tracker.ai.costs import ModelPricing
 from transaction_tracker.ai.assistant import query_finance_assistant
 from transaction_tracker.ai.config import ai_status, load_ai_config
 from transaction_tracker.ai.finance_tools import RAW_LIMIT, ToolValidationError, call_finance_tool
@@ -33,6 +34,19 @@ def _seed_assistant_transactions(db_path):
     append_transactions(txs, str(db_path), categories)
 
 
+@pytest.fixture(autouse=True)
+def _stub_model_pricing(monkeypatch):
+    pricing = lambda model: ModelPricing(model=model, prompt_per_token=0.00000225, completion_per_token=0.00000275)
+    monkeypatch.setattr(
+        "transaction_tracker.ai.costs.get_model_pricing",
+        pricing,
+    )
+    monkeypatch.setattr(
+        "transaction_tracker.ai.config.get_model_pricing",
+        pricing,
+    )
+
+
 def test_ai_config_defaults_to_cerebras_and_key_file(tmp_path, monkeypatch):
     key_file = tmp_path / "api-key"
     key_file.write_text("  secret-value\n", encoding="utf-8")
@@ -49,6 +63,14 @@ def test_ai_config_defaults_to_cerebras_and_key_file(tmp_path, monkeypatch):
         "baseUrl": "https://api.cerebras.ai/v1",
         "model": "zai-glm-4.7",
         "apiKeyPresent": True,
+        "pricing": {
+            "model": "zai-glm-4.7",
+            "currency": "USD",
+            "promptPerToken": 0.00000225,
+            "completionPerToken": 0.00000275,
+            "promptPerMillion": 2.25,
+            "completionPerMillion": 2.75,
+        },
     }
     assert "secret-value" not in json.dumps(status)
 
@@ -123,41 +145,51 @@ class FakeProvider:
     def __init__(self):
         self.calls = 0
         self.messages = []
+        self.config = type("Config", (), {"model": "zai-glm-4.7"})()
 
-    def complete(self, messages, *, tools=None, tool_choice=None):
+    def complete_response(self, messages, *, tools=None, tool_choice=None):
         self.calls += 1
         self.messages.append(messages)
         if self.calls == 1:
             return {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    {
-                        "id": "call-1",
-                        "type": "function",
-                        "function": {
-                            "name": "getSpendByMerchant",
-                            "arguments": json.dumps(
-                                {
-                                    "merchant": "Costco",
-                                    "start_date": "2026-01-01",
-                                    "end_date": "2026-05-18",
-                                }
-                            ),
-                        },
-                    }
-                ],
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {
+                                "name": "getSpendByMerchant",
+                                "arguments": json.dumps(
+                                    {
+                                        "merchant": "Costco",
+                                        "start_date": "2026-01-01",
+                                        "end_date": "2026-05-18",
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                },
+                "usage": {"prompt_tokens": 100, "completion_tokens": 25, "total_tokens": 125},
             }
         return {
-            "role": "assistant",
-            "content": json.dumps(
-                {
-                    "summary": "Costco spend is $300.00 year to date.",
-                    "bullets": ["3 transactions", "No unusual spikes"],
-                    "followup": "Ask for a month-by-month breakdown if needed.",
-                }
-            ),
+            "message": {
+                "role": "assistant",
+                "content": json.dumps(
+                    {
+                        "summary": "Costco spend is $300.00 year to date.",
+                        "bullets": ["3 transactions", "No unusual spikes"],
+                        "followup": "Ask for a month-by-month breakdown if needed.",
+                    }
+                ),
+            },
+            "usage": {"prompt_tokens": 80, "completion_tokens": 40, "total_tokens": 120},
         }
+
+    def complete(self, messages, *, tools=None, tool_choice=None):
+        return self.complete_response(messages, tools=tools, tool_choice=tool_choice)["message"]
 
 
 def test_assistant_tool_call_loop_uses_fake_provider(tmp_path):
@@ -175,6 +207,9 @@ def test_assistant_tool_call_loop_uses_fake_provider(tmp_path):
     assert result.data_used[0]["result"]["merchants"][0]["total"] == 300.0
     assert result.cards[0]["kind"] == "metric"
     assert result.tables[0]["title"] == "Merchant breakdown"
+    assert result.sessionCost["model"] == "zai-glm-4.7"
+    assert result.sessionCost["totalTokens"] == 245
+    assert result.sessionCost["cached"] is False
     assert provider.calls == 2
 
 
@@ -215,6 +250,7 @@ def test_assistant_endpoint_with_fake_provider(tmp_path, monkeypatch):
     assert body["dataUsed"][0]["tool"] == "getSpendByMerchant"
     assert body["cards"][0]["kind"] == "metric"
     assert body["tables"][0]["title"] == "Merchant breakdown"
+    assert body["sessionCost"]["totalTokens"] == 245
 
 
 def test_assistant_endpoint_rejects_missing_question(tmp_path):

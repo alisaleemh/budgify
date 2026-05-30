@@ -75,6 +75,32 @@ export interface AssistantStatus {
   baseUrl: string;
   model: string;
   apiKeyPresent: boolean;
+  pricing?: {
+    model: string;
+    currency: string;
+    promptPerToken: number;
+    completionPerToken: number;
+    promptPerMillion: number;
+    completionPerMillion: number;
+  } | null;
+}
+
+export interface SessionCost {
+  requestId: string;
+  source: "assistant" | "beta";
+  model: string;
+  currency: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedTokens: number;
+  promptRateUsdPerToken: number | null;
+  completionRateUsdPerToken: number | null;
+  promptRateUsdPerMillion: number | null;
+  completionRateUsdPerMillion: number | null;
+  estimatedCostUsd: number | null;
+  cached: boolean;
+  estimated: boolean;
 }
 
 export interface AssistantMetricCard {
@@ -143,6 +169,7 @@ export interface AssistantResponse {
   cards: AssistantCard[];
   tables: AssistantTable[];
   dataUsed: AssistantDataUse[];
+  sessionCost?: SessionCost | null;
 }
 
 export interface BetaCitation {
@@ -175,6 +202,9 @@ export interface BetaBriefing {
   insights: BetaInsight[];
   recommendations: BetaRecommendation[];
   citations: BetaCitation[];
+  sessionCost?: SessionCost | null;
+  requestId?: string;
+  cacheHit?: boolean;
   dataFreshness: {
     asOf: string;
     rangeStart: string;

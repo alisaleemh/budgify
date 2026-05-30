@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from transaction_tracker.ai.costs import get_model_pricing
 
 DEFAULT_AI_PROVIDER = "cerebras"
 DEFAULT_AI_BASE_URL = "https://api.cerebras.ai/v1"
@@ -49,9 +50,11 @@ def load_ai_config(environ: dict[str, str] | None = None) -> AIConfig:
 
 def ai_status(environ: dict[str, str] | None = None) -> dict[str, object]:
     config = load_ai_config(environ)
+    pricing = get_model_pricing(config.model)
     return {
         "provider": config.provider,
         "baseUrl": config.base_url,
         "model": config.model,
         "apiKeyPresent": config.api_key_present,
+        "pricing": pricing.as_dict() if pricing else None,
     }

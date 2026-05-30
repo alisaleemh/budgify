@@ -7,7 +7,13 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 from transaction_tracker import web
-from transaction_tracker.ai.beta import BetaCitation, ask_beta_question, generate_beta_briefing, parse_beta_response
+from transaction_tracker.ai.beta import (
+    BetaCitation,
+    ask_beta_question,
+    clear_beta_cache,
+    generate_beta_briefing,
+    parse_beta_response,
+)
 from transaction_tracker.core.models import Transaction
 from transaction_tracker.database import append_transactions
 from transaction_tracker.mcp_server import _recurring_impl, _spend_summary_impl
@@ -30,7 +36,11 @@ def _seed_beta_transactions(db_path):
 
 
 class FakeBetaProvider:
+    def __init__(self):
+        self.calls = 0
+
     def complete(self, messages, *, tools=None, tool_choice=None):
+        self.calls += 1
         context_message = next(message for message in messages if message["role"] == "system" and message["content"].startswith("Budgify MCP context"))
         context = json.loads(context_message["content"].split("Budgify MCP context:\n", 1)[1])
         tx_id = context["transactions"][0]["id"]
@@ -63,6 +73,7 @@ class FakeBetaProvider:
 
 
 def test_beta_briefing_uses_mcp_context_and_filters_citations(tmp_path):
+    clear_beta_cache()
     db_path = tmp_path / "txs.db"
     _seed_beta_transactions(db_path)
 
@@ -73,6 +84,41 @@ def test_beta_briefing_uses_mcp_context_and_filters_citations(tmp_path):
     assert result.citations
     assert result.insights[0].citationIds == [result.citations[0].id]
     assert result.estimated is False
+
+
+def test_beta_briefing_cache_skips_llm_until_transactions_change(tmp_path):
+    clear_beta_cache()
+    db_path = tmp_path / "txs.db"
+    _seed_beta_transactions(db_path)
+    provider = FakeBetaProvider()
+
+    first = generate_beta_briefing(str(db_path), provider=provider, today=date(2026, 5, 30))
+    second = generate_beta_briefing(str(db_path), provider=provider, today=date(2026, 5, 30))
+
+    assert first.summary == second.summary
+    assert provider.calls == 1
+
+    append_transactions(
+        [Transaction(date=date(2026, 5, 12), description="Groceries", merchant="Fresh Market", amount=12.0, provider="amex")],
+        str(db_path),
+        {"groceries": ["Fresh"]},
+    )
+    generate_beta_briefing(str(db_path), provider=provider, today=date(2026, 5, 30))
+
+    assert provider.calls == 2
+
+
+def test_beta_ask_cache_includes_question_and_transactions(tmp_path):
+    clear_beta_cache()
+    db_path = tmp_path / "txs.db"
+    _seed_beta_transactions(db_path)
+    provider = FakeBetaProvider()
+
+    ask_beta_question(str(db_path), "Why was spending high?", provider=provider, today=date(2026, 5, 30))
+    ask_beta_question(str(db_path), "Why was spending high?", provider=provider, today=date(2026, 5, 30))
+    ask_beta_question(str(db_path), "What subscriptions should I cancel?", provider=provider, today=date(2026, 5, 30))
+
+    assert provider.calls == 2
 
 
 def test_beta_ask_rejects_empty_question(tmp_path):

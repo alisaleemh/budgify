@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
@@ -50,6 +51,10 @@ Rules:
 - Use citationIds only from the provided transaction list.
 - Mark estimated true when using incomplete history, projections, or heuristics.
 - If there are no useful transactions, return a sparse response saying data is insufficient."""
+
+_CACHE_LOCK = threading.Lock()
+_CACHE_MAX_ITEMS = 64
+_BETA_CACHE: dict[tuple[Any, ...], "BetaBriefing"] = {}
 
 
 @dataclass
@@ -108,6 +113,11 @@ def generate_beta_briefing(
     today: date | None = None,
 ) -> BetaBriefing:
     anchor = today or date.today()
+    fingerprint = beta_transaction_fingerprint(db_path)
+    cache_key = ("briefing", db_path, anchor.isoformat(), fingerprint)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
     start = anchor - timedelta(days=30)
     prior_start = start - timedelta(days=30)
     prior_end = start - timedelta(days=1)
@@ -116,7 +126,8 @@ def generate_beta_briefing(
         "Create today's Budgify money briefing with sections for what changed, "
         "what it means, and recommended actions."
     )
-    return _run_beta_ai(context, prompt, provider=provider)
+    result = _run_beta_ai(context, prompt, provider=provider)
+    return _cache_set(cache_key, result)
 
 
 def ask_beta_question(
@@ -129,11 +140,43 @@ def ask_beta_question(
     if not cleaned:
         raise ValueError("question is required")
     anchor = today or date.today()
+    fingerprint = beta_transaction_fingerprint(db_path)
+    cache_key = ("ask", db_path, anchor.isoformat(), cleaned, fingerprint)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
     start = anchor - timedelta(days=120)
     prior_start = start - timedelta(days=120)
     prior_end = start - timedelta(days=1)
     context = _beta_context(db_path, start, anchor, prior_start, prior_end)
-    return _run_beta_ai(context, cleaned, provider=provider)
+    result = _run_beta_ai(context, cleaned, provider=provider)
+    return _cache_set(cache_key, result)
+
+
+def beta_transaction_fingerprint(db_path: str) -> str:
+    """Return a cheap MCP-derived cache key for the current transaction dataset."""
+    profile = _profile_summary_impl(db_path)
+    totals = _spend_summary_impl(db_path, groupBy="month", limit=50)
+    payload = {
+        "dateRange": profile.get("dateRange"),
+        "transactionCount": profile.get("transactionCount", 0),
+        "totalCents": totals.get("totalCents", 0),
+        "groupCount": len(totals.get("groups") or []),
+        "groups": [
+            {
+                "key": item.get("key"),
+                "totalCents": item.get("totalCents"),
+                "count": item.get("count"),
+            }
+            for item in totals.get("groups", [])
+        ],
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def clear_beta_cache() -> None:
+    with _CACHE_LOCK:
+        _BETA_CACHE.clear()
 
 
 def parse_beta_response(raw: str | dict[str, Any], citation_lookup: dict[str, BetaCitation]) -> dict[str, Any]:
@@ -202,6 +245,19 @@ def _run_beta_ai(
         },
         estimated=parsed["estimated"],
     )
+
+
+def _cache_get(key: tuple[Any, ...]) -> BetaBriefing | None:
+    with _CACHE_LOCK:
+        return _BETA_CACHE.get(key)
+
+
+def _cache_set(key: tuple[Any, ...], value: BetaBriefing) -> BetaBriefing:
+    with _CACHE_LOCK:
+        if len(_BETA_CACHE) >= _CACHE_MAX_ITEMS:
+            _BETA_CACHE.pop(next(iter(_BETA_CACHE)))
+        _BETA_CACHE[key] = value
+    return value
 
 
 def _beta_context(db_path: str, start: date, end: date, prior_start: date, prior_end: date) -> dict[str, Any]:

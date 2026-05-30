@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, ChevronsDown, ChevronsUp } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
+import { BetaHome } from "@/components/beta/BetaHome";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { AssistantPanel } from "@/components/dashboard/AssistantPanel";
@@ -114,7 +115,7 @@ function transactionMeta(row: Transaction) {
   };
 }
 
-export default function App() {
+function DashboardApp() {
   const text = useMemo(rootText, []);
   const analytics = useAnalytics("/");
   const [metadata, setMetadata] = useState<Metadata>({ categories: [], providers: [], merchants: [] });
@@ -522,4 +523,8 @@ export default function App() {
       </Dialog>
     </AppLayout>
   );
+}
+
+export default function App() {
+  return window.location.pathname === "/beta" ? <BetaHome /> : <DashboardApp />;
 }

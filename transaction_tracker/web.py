@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse, unquote
 
 import hmac
 
+from transaction_tracker.ai.beta import ask_beta_question, generate_beta_briefing
 from transaction_tracker.ai.assistant import query_finance_assistant
 from transaction_tracker.ai.config import ai_status
 from transaction_tracker.ai.finance_tools import ToolValidationError
@@ -224,6 +225,9 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/assistant/query":
             self._handle_assistant_query()
             return
+        if parsed.path == "/api/beta/ask":
+            self._handle_beta_ask()
+            return
         if parsed.path.startswith("/api/"):
             self._handle_post_api(parsed)
             return
@@ -237,6 +241,10 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
         try:
             if path == "/api/assistant/status":
                 _json_response(self, ai_status())
+                return
+
+            if path == "/api/beta/briefing":
+                _json_response(self, generate_beta_briefing(self.db_path).as_dict())
                 return
 
             if path == "/api/metadata":
@@ -390,6 +398,21 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             _json_response(self, {"error": str(exc)}, status=500)
 
+    def _handle_beta_ask(self) -> None:
+        try:
+            payload = _read_json_body(self)
+            question = payload.get("question")
+            if not isinstance(question, str) or not question.strip():
+                _json_response(self, {"error": "question is required"}, status=400)
+                return
+            _json_response(self, ask_beta_question(self.db_path, question).as_dict())
+        except ValueError as exc:
+            _json_response(self, {"error": str(exc)}, status=400)
+        except RuntimeError as exc:
+            _json_response(self, {"error": str(exc)}, status=503)
+        except Exception as exc:
+            _json_response(self, {"error": str(exc)}, status=500)
+
     def _handle_post_api(self, parsed) -> None:
         if parsed.path == "/api/analytics/events":
             if not self.analytics_enabled:
@@ -418,6 +441,8 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
         if path == "/":
             path = "/index.html"
         resolved = (static_root / unquote(path.lstrip("/"))).resolve()
+        if not resolved.exists() and "." not in Path(path).name:
+            resolved = (static_root / "index.html").resolve()
         if static_root not in resolved.parents and resolved != static_root:
             self.send_error(404)
             return

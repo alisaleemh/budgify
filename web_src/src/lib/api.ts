@@ -1,4 +1,4 @@
-import type { AssistantResponse, AssistantStatus, DashboardData, Filters, Metadata } from "@/lib/types";
+import type { AssistantResponse, AssistantStatus, BetaBriefing, DashboardData, Filters, Metadata } from "@/lib/types";
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -61,6 +61,18 @@ export function fetchAssistantStatus() {
 
 export function askAssistant(question: string) {
   return fetchJSON<AssistantResponse>("/api/assistant/query", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+}
+
+export function fetchBetaBriefing() {
+  return fetchJSON<BetaBriefing>("/api/beta/briefing");
+}
+
+export function askBeta(question: string) {
+  return fetchJSON<BetaBriefing>("/api/beta/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question }),

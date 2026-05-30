@@ -144,3 +144,48 @@ export interface AssistantResponse {
   tables: AssistantTable[];
   dataUsed: AssistantDataUse[];
 }
+
+export interface BetaCitation {
+  id: string;
+  date: string;
+  merchant: string;
+  amount: number;
+  amountCents: number;
+  category: string;
+  account?: string | null;
+}
+
+export interface BetaInsight {
+  title: string;
+  body: string;
+  why?: string;
+  citationIds: string[];
+}
+
+export interface BetaRecommendation {
+  title: string;
+  body: string;
+  estimated: boolean;
+  citationIds: string[];
+  state: "open" | "approved" | "ignored";
+}
+
+export interface BetaBriefing {
+  summary: string;
+  insights: BetaInsight[];
+  recommendations: BetaRecommendation[];
+  citations: BetaCitation[];
+  dataFreshness: {
+    asOf: string;
+    rangeStart: string;
+    rangeEnd: string;
+    ledgerStart?: string | null;
+    ledgerEnd?: string | null;
+  };
+  context: {
+    range: { startDate: string; endDate: string };
+    transactionCount: number;
+    tools: string[];
+  };
+  estimated: boolean;
+}

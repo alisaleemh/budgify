@@ -630,6 +630,19 @@ def _insight_context_impl(
     return _clean(payload)
 
 
+def _profile_summary_impl(dbPath: str | None = None) -> dict[str, Any]:
+    overview = overview_metrics(_db_path(dbPath))
+    return _clean({
+        "dateRange": {"startDate": overview.get("first_date"), "endDate": overview.get("last_date")},
+        "transactionCount": overview.get("transactions", 0),
+        "categoryCount": len(list_categories(_db_path(dbPath))),
+        "merchantCount": len(list_unique_merchants(_db_path(dbPath))),
+        "accountCount": len(list_providers(_db_path(dbPath))),
+        "budgetCount": _budget_count(dbPath),
+        "currency": "USD",
+    })
+
+
 @server.tool(name="budgify.health", description="Check MCP/server/db readiness")
 async def budgify_health(dbPath: str | None = None) -> dict[str, Any]:
     def _run() -> dict[str, Any]:
@@ -647,16 +660,7 @@ async def budgify_health(dbPath: str | None = None) -> dict[str, Any]:
 async def budgify_profile_summary(dbPath: str | None = None) -> dict[str, Any]:
     def _run() -> dict[str, Any]:
         try:
-            overview = overview_metrics(_db_path(dbPath))
-            return _clean({
-                "dateRange": {"startDate": overview.get("first_date"), "endDate": overview.get("last_date")},
-                "transactionCount": overview.get("transactions", 0),
-                "categoryCount": len(list_categories(_db_path(dbPath))),
-                "merchantCount": len(list_unique_merchants(_db_path(dbPath))),
-                "accountCount": len(list_providers(_db_path(dbPath))),
-                "budgetCount": _budget_count(dbPath),
-                "currency": "USD",
-            })
+            return _profile_summary_impl(dbPath)
         except Exception as exc:
             return _err(exc)
 

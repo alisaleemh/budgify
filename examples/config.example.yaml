@@ -4,6 +4,7 @@ bank_loaders:
   canadiantire: "transaction_tracker.loaders.canadiantire.CanadianTireLoader"
   tdvisa: "transaction_tracker.loaders.tdvisa.TDVisaLoader"
   hometrust: "transaction_tracker.loaders.hometrust.HomeTrustLoader"
+  wealthsimple: "transaction_tracker.loaders.wealthsimple.WealthsimpleLoader"
 
 output_modules:
   csv: "transaction_tracker.outputs.csv_output.CSVOutput"

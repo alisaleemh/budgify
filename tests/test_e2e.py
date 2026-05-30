@@ -70,6 +70,7 @@ def write_config(tmp_path, data_dir):
     cfg = {
         'bank_loaders': {
             'tdvisa': 'transaction_tracker.loaders.tdvisa.TDVisaLoader',
+            'wealthsimple': 'transaction_tracker.loaders.wealthsimple.WealthsimpleLoader',
         },
         'output_modules': {
             'csv': 'transaction_tracker.outputs.csv_output.CSVOutput',
@@ -97,6 +98,16 @@ def write_tdvisa_sample(path):
     rows = [
         ['05/02/2025', 'Grocery Store', '56.78', '', '1000'],
         ['05/03/2025', 'Restaurant A', '12.34', '', '990'],
+    ]
+    with open(path, 'w', newline='') as f:
+        csv.writer(f).writerows(rows)
+
+
+def write_wealthsimple_sample(path):
+    rows = [
+        ['transaction_date', 'post_date', 'type', 'details', 'amount', 'currency'],
+        ['2026-05-04', '2026-05-04', 'Purchase', 'DAATA GRILL', '15.81', 'CAD'],
+        ['2026-05-17', '2026-05-17', 'Refund settled', 'UBER CANADA', '-22.14', 'CAD'],
     ]
     with open(path, 'w', newline='') as f:
         csv.writer(f).writerows(rows)
@@ -136,6 +147,28 @@ def test_cli_csv_output(tmp_path):
     assert len(lines) == 4  # header + 3 rows
     assert any('restaurants' in l for l in lines[1:])
     assert any('groceries' in l for l in lines[1:])
+
+
+def test_cli_wealthsimple_raw_filename(tmp_path):
+    stmts = tmp_path / 'stmts'
+    stmts.mkdir()
+    ws_file = stmts / 'credit-card-statement-transactions-2026-05-01.csv'
+    write_wealthsimple_sample(ws_file)
+    cfg_path = write_config(tmp_path, tmp_path / 'data')
+
+    runner = CliRunner()
+    res = runner.invoke(
+        cli,
+        ['--dir', str(stmts), '--output', 'csv', '--config', str(cfg_path)]
+    )
+    assert res.exit_code == 0, res.output
+    out_csv = tmp_path / 'data' / 'Budget2026.csv'
+    assert out_csv.exists()
+    with open(out_csv) as f:
+        lines = [l.strip() for l in f]
+    assert len(lines) == 3  # header + 2 rows
+    assert any('DAATA GRILL' in line for line in lines[1:])
+    assert any('UBER CANADA' in line for line in lines[1:])
 
 
 def test_cli_excel_output(tmp_path):

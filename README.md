@@ -62,6 +62,7 @@ bank_loaders:
   canadiantire: "transaction_tracker.loaders.canadiantire.CanadianTireLoader"
   tdvisa:     "transaction_tracker.loaders.tdvisa.TDVisaLoader"
   hometrust:  "transaction_tracker.loaders.hometrust.HomeTrustLoader"
+  wealthsimple: "transaction_tracker.loaders.wealthsimple.WealthsimpleLoader"
 
 output_modules:
   csv:    "transaction_tracker.outputs.csv_output.CSVOutput"
@@ -180,7 +181,7 @@ Password protection (web UI):
 ```bash
 python - <<'PY'
 from transaction_tracker.web import _encode_password
-print(_encode_password("your-password", "Altaf Hussain"))
+print(_encode_password("password", "pass"))
 PY
 ```
 
@@ -188,7 +189,7 @@ PY
 3) Start the stack with the key:
 
 ```bash
-BUDGIFY_PASSWORD_KEY="Altaf Hussain" docker-compose up --build
+BUDGIFY_PASSWORD_KEY="pass" docker-compose up --build
 ```
 
 The browser will prompt for Basic Auth.
@@ -444,6 +445,7 @@ Legacy tools remain for compatibility:
 1. Create a subclass of `BaseLoader` in `transaction_tracker/loaders/YourBank.py`.
 2. Implement `load(self, file_path, include_payments=False)` to yield `Transaction`.
 3. Register it in `config.yaml` under `bank_loaders`.
+4. For Wealthsimple credit card CSVs, Budgify also recognizes raw exports named like `credit-card-statement-transactions-2026-05-01.csv` and normalized files named like `ws-05-2026.csv`.
 
 ### Add a new output format
 

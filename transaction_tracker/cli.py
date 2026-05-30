@@ -1,5 +1,6 @@
 # transaction_tracker/cli.py
 import os
+import re
 import click
 from dotenv import load_dotenv
 from transaction_tracker.config import load_config
@@ -10,6 +11,21 @@ from transaction_tracker.manual import load_manual_transactions
 from transaction_tracker.recurring import expand_recurring_transactions
 from transaction_tracker.ai import generate_report
 from transaction_tracker.database import append_transactions
+
+_WEALTHSIMPLE_RAW_RX = re.compile(r"^credit-card-statement-transactions-\d{4}-\d{2}-\d{2}\.csv$", re.I)
+_WEALTHSIMPLE_NORMALIZED_RX = re.compile(r"^ws-\d{2}-\d{4}\.csv$", re.I)
+
+
+def _detect_loader_name(filename: str, loaders: dict[str, str]) -> str | None:
+    low = filename.lower()
+    match = next((bank for bank in loaders if bank.lower() in low), None)
+    if match:
+        return match
+    if "wealthsimple" in loaders and (
+        _WEALTHSIMPLE_RAW_RX.match(filename) or _WEALTHSIMPLE_NORMALIZED_RX.match(filename)
+    ):
+        return "wealthsimple"
+    return None
 
 @click.command()
 @click.option(
@@ -83,8 +99,7 @@ def main(statements_dir, output_format, include_payments, config_path,
         path = os.path.join(statements_dir, fname)
         if not os.path.isfile(path):
             continue
-        low = fname.lower()
-        match = next((bank for bank in loaders if bank.lower() in low), None)
+        match = _detect_loader_name(fname, loaders)
         if not match:
             click.echo(f"⚠️  Skipping unknown bank file: {fname}", err=True)
             continue

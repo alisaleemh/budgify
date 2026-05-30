@@ -148,7 +148,16 @@ class FakeProvider:
                     }
                 ],
             }
-        return {"role": "assistant", "content": "Costco year-to-date spend is $300.00."}
+        return {
+            "role": "assistant",
+            "content": json.dumps(
+                {
+                    "summary": "Costco spend is $300.00 year to date.",
+                    "bullets": ["3 transactions", "No unusual spikes"],
+                    "followup": "Ask for a month-by-month breakdown if needed.",
+                }
+            ),
+        }
 
 
 def test_assistant_tool_call_loop_uses_fake_provider(tmp_path):
@@ -158,7 +167,10 @@ def test_assistant_tool_call_loop_uses_fake_provider(tmp_path):
 
     result = query_finance_assistant(str(db_path), "How much at Costco YTD?", provider=provider)
 
-    assert result.answer == "Costco year-to-date spend is $300.00."
+    assert result.answer == "Costco spend is $300.00 year to date.\n\n- 3 transactions\n- No unusual spikes\n\nNext: Ask for a month-by-month breakdown if needed."
+    assert result.summary == "Costco spend is $300.00 year to date."
+    assert result.bullets == ["3 transactions", "No unusual spikes"]
+    assert result.followup == "Ask for a month-by-month breakdown if needed."
     assert result.data_used[0]["tool"] == "getSpendByMerchant"
     assert result.data_used[0]["result"]["merchants"][0]["total"] == 300.0
     assert result.cards[0]["kind"] == "metric"
@@ -196,7 +208,10 @@ def test_assistant_endpoint_with_fake_provider(tmp_path, monkeypatch):
         server.shutdown()
         thread.join(timeout=2)
 
-    assert body["answer"] == "Costco year-to-date spend is $300.00."
+    assert body["answer"] == "Costco spend is $300.00 year to date.\n\n- 3 transactions\n- No unusual spikes\n\nNext: Ask for a month-by-month breakdown if needed."
+    assert body["summary"] == "Costco spend is $300.00 year to date."
+    assert body["bullets"] == ["3 transactions", "No unusual spikes"]
+    assert body["followup"] == "Ask for a month-by-month breakdown if needed."
     assert body["dataUsed"][0]["tool"] == "getSpendByMerchant"
     assert body["cards"][0]["kind"] == "metric"
     assert body["tables"][0]["title"] == "Merchant breakdown"

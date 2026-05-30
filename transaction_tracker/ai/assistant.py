@@ -15,13 +15,30 @@ Answer only questions about the user's transaction data and personal spending.
 Use finance tools for all numeric claims. The final answer must be grounded only
 in tool results already returned in this conversation. If the user asks about
 anything unrelated to finance or their ledger, briefly steer them back to
-Budgify finance questions. Prefer concise markdown with short sections, bullets,
-and plain-language labels. Keep prose tight and scannable."""
+Budgify finance questions.
+
+Return the final response as compact JSON only, with this schema:
+{
+  "summary": "one short sentence with the main answer",
+  "bullets": ["up to 3 short bullets", "each bullet should be factual and concise"],
+  "followup": "optional short next step or empty string"
+}
+
+Rules:
+- Keep the summary under 18 words.
+- Keep each bullet under 14 words.
+- Do not write paragraphs.
+- Do not repeat the same fact in multiple bullets.
+- If there is a table or structured card, reference it briefly instead of restating the data.
+- If the user asked a simple question, the summary alone may be enough."""
 
 
 @dataclass
 class AssistantResult:
     answer: str
+    summary: str = ""
+    bullets: list[str] = field(default_factory=list)
+    followup: str = ""
     data_used: list[dict[str, Any]] = field(default_factory=list)
     cards: list[dict[str, Any]] = field(default_factory=list)
     tables: list[dict[str, Any]] = field(default_factory=list)
@@ -48,7 +65,16 @@ def query_finance_assistant(
         tool_calls = message.get("tool_calls") or []
         if not tool_calls:
             cards, tables = _build_structured_blocks(data_used)
-            return AssistantResult(answer=_message_content(message), data_used=data_used, cards=cards, tables=tables)
+            compact = _parse_compact_response(message)
+            return AssistantResult(
+                answer=compact["answer"],
+                summary=compact["summary"],
+                bullets=compact["bullets"],
+                followup=compact["followup"],
+                data_used=data_used,
+                cards=cards,
+                tables=tables,
+            )
         messages.append(_assistant_tool_message(message))
         for call in tool_calls:
             function = call.get("function") or {}
@@ -75,7 +101,16 @@ def query_finance_assistant(
     )
     message = provider.complete(messages)
     cards, tables = _build_structured_blocks(data_used)
-    return AssistantResult(answer=_message_content(message), data_used=data_used, cards=cards, tables=tables)
+    compact = _parse_compact_response(message)
+    return AssistantResult(
+        answer=compact["answer"],
+        summary=compact["summary"],
+        bullets=compact["bullets"],
+        followup=compact["followup"],
+        data_used=data_used,
+        cards=cards,
+        tables=tables,
+    )
 
 
 def _build_structured_blocks(data_used: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -325,6 +360,49 @@ def _message_content(message: dict[str, Any]) -> str:
     if not isinstance(content, str):
         return ""
     return content.strip()
+
+
+def _parse_compact_response(message: dict[str, Any]) -> dict[str, Any]:
+    content = _message_content(message)
+    if not content:
+        return {"answer": "", "summary": "", "bullets": [], "followup": ""}
+    if content.startswith("{"):
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            summary = _clean_compact_line(parsed.get("summary"))
+            bullets = [_clean_compact_line(item) for item in _coerce_list(parsed.get("bullets"))][:3]
+            followup = _clean_compact_line(parsed.get("followup"))
+            answer = _compose_answer(summary, bullets, followup, content)
+            return {"answer": answer, "summary": summary, "bullets": bullets, "followup": followup}
+    return {"answer": content, "summary": "", "bullets": [], "followup": ""}
+
+
+def _coerce_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    return []
+
+
+def _clean_compact_line(value: Any) -> str:
+    if not isinstance(value, str):
+        value = str(value or "")
+    return " ".join(value.split()).strip()
+
+
+def _compose_answer(summary: str, bullets: list[str], followup: str, fallback: str) -> str:
+    parts: list[str] = []
+    if summary:
+        parts.append(summary)
+    if bullets:
+        parts.append("\n".join(f"- {bullet}" for bullet in bullets))
+    if followup:
+        parts.append(f"Next: {followup}")
+    if parts:
+        return "\n\n".join(parts).strip()
+    return fallback.strip()
 
 
 def _assistant_tool_message(message: dict[str, Any]) -> dict[str, Any]:

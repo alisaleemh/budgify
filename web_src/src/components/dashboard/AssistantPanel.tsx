@@ -8,6 +8,7 @@ import {
   Loader2,
   RotateCcw,
   Sparkles,
+  MessageSquareText,
   TrendingDown,
   TrendingUp,
   User,
@@ -36,6 +37,9 @@ interface ChatMessage {
   text: string;
   streaming?: boolean;
   loading?: boolean;
+  summary?: string;
+  bullets?: string[];
+  followup?: string;
   cards?: AssistantCard[];
   tables?: AssistantTable[];
   dataUsed?: AssistantDataUse[];
@@ -236,6 +240,31 @@ function StructuredCards({ cards }: { cards: AssistantCard[] }) {
   );
 }
 
+function CompactAnswer({ summary, bullets, followup }: { summary?: string; bullets?: string[]; followup?: string }) {
+  if (!summary && !(bullets || []).length && !followup) return null;
+  return (
+    <div className="rounded-2xl border bg-muted/20 p-4">
+      {summary ? <p className="text-base leading-7 text-foreground">{summary}</p> : null}
+      {bullets?.length ? (
+        <ul className={cn("mt-3 space-y-2", !summary && "mt-0")}>
+          {bullets.map((bullet, index) => (
+            <li key={`${bullet}-${index}`} className="flex gap-2 text-sm leading-6 text-foreground">
+              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" aria-hidden="true" />
+              <span>{bullet}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {followup ? (
+        <div className="mt-3 flex items-start gap-2 rounded-xl border bg-background px-3 py-2">
+          <MessageSquareText className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <p className="text-sm leading-6 text-muted-foreground">{followup}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function AssistantTables({ tables }: { tables: AssistantTable[] }) {
   if (!tables.length) return null;
   const numericColumns = new Set(["amount", "total", "average", "difference", "transactions"]);
@@ -395,12 +424,15 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
       </div>
       <div className="w-full rounded-2xl border bg-card px-4 py-4 shadow-sm">
         <div className="grid gap-4">
+          <CompactAnswer summary={message.summary} bullets={message.bullets} followup={message.followup} />
           <StructuredCards cards={message.cards || []} />
           <AssistantTables tables={message.tables || []} />
-          <MarkdownRenderer
-            content={displayedText}
-            className={cn("prose prose-sm sm:prose-base dark:prose-invert max-w-none", !message.cards?.length && !message.tables?.length && "mt-0")}
-          />
+          {!message.summary && !message.bullets?.length ? (
+            <MarkdownRenderer
+              content={displayedText}
+              className={cn("prose prose-sm sm:prose-base dark:prose-invert max-w-none", !message.cards?.length && !message.tables?.length && "mt-0")}
+            />
+          ) : null}
           <ToolResultCollapse dataUsed={message.dataUsed || []} />
         </div>
       </div>
@@ -502,6 +534,9 @@ export function AssistantPanel() {
         id: loadingMessage.id,
         role: "assistant",
         text: result.answer || "No answer returned.",
+        summary: result.summary || "",
+        bullets: result.bullets || [],
+        followup: result.followup || "",
         cards: result.cards || [],
         tables: result.tables || [],
         dataUsed: result.dataUsed || [],
@@ -568,18 +603,18 @@ export function AssistantPanel() {
           role="log"
           aria-live="polite"
           aria-relevant="additions text"
-          className="flex max-h-[72vh] min-h-[26rem] flex-col gap-4 overflow-y-auto rounded-2xl border bg-muted/20 p-3 sm:min-h-[34rem] sm:p-4"
+          className="flex max-h-[72vh] min-h-[16rem] flex-col gap-4 overflow-y-auto rounded-2xl border bg-muted/20 p-3 sm:min-h-[19rem] sm:p-4"
         >
           {messages.length === 0 ? (
-            <div className="grid gap-4">
-              <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            <div className="grid gap-3">
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-card px-4 py-3 shadow-sm">
                 <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
                   <Sparkles className="h-3.5 w-3.5" />
                   Start here
                 </div>
-                <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-                  Ask for totals, comparisons, recurring patterns, or odd charges. The answer stays compact unless the data needs a table.
-                </p>
+                <span className="text-sm text-muted-foreground">
+                  Short answers first. Tables and cards only when they help.
+                </span>
               </div>
               <SuggestedPrompts onPrompt={onPrompt} />
             </div>
@@ -608,6 +643,11 @@ export function AssistantPanel() {
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
               onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                  return;
+                }
                 if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                   event.preventDefault();
                   event.currentTarget.form?.requestSubmit();

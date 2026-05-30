@@ -373,6 +373,9 @@ class BudgifyWebHandler(BaseHTTPRequestHandler):
                 self,
                 {
                     "answer": result.answer,
+                    "summary": result.summary,
+                    "bullets": result.bullets,
+                    "followup": result.followup,
                     "cards": result.cards,
                     "tables": result.tables,
                     "dataUsed": result.data_used,

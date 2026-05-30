@@ -137,6 +137,9 @@ export interface AssistantTable {
 
 export interface AssistantResponse {
   answer: string;
+  summary?: string;
+  bullets?: string[];
+  followup?: string;
   cards: AssistantCard[];
   tables: AssistantTable[];
   dataUsed: AssistantDataUse[];

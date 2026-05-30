@@ -173,6 +173,48 @@ def test_beta_parser_schema_rejects_unknown_citation_ids():
     assert parsed["recommendations"][0].citationIds == []
 
 
+def test_beta_briefing_falls_back_when_model_output_is_not_json(tmp_path, monkeypatch):
+    clear_beta_cache()
+    db_path = tmp_path / "txs.db"
+    _seed_beta_transactions(db_path)
+
+    class BadProvider(FakeBetaProvider):
+        def complete_response(self, messages, *, tools=None, tool_choice=None):
+            self.calls += 1
+            return {
+                "message": {"role": "assistant", "content": "plain text output"},
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            }
+
+    monkeypatch.setattr(
+        "transaction_tracker.ai.beta._beta_context",
+        lambda *args, **kwargs: {
+            "dataFreshness": {"asOf": "2026-05-30", "rangeStart": "2026-05-01", "rangeEnd": "2026-05-30"},
+            "range": {"startDate": "2026-05-01", "endDate": "2026-05-30"},
+            "profile": {"transactionCount": 5},
+            "transactions": [
+                {
+                    "id": "tx-1",
+                    "date": "2026-05-02",
+                    "merchant": "Fresh Market",
+                    "amount": 85.0,
+                    "amountCents": 8500,
+                    "category": "groceries",
+                    "account": "amex",
+                }
+            ],
+            "tools": ["budgify.profile_summary"],
+        },
+    )
+
+    result = generate_beta_briefing(str(db_path), provider=BadProvider(), today=date(2026, 5, 30))
+
+    assert result.summary == "Budgify could not format a grounded briefing from the model output."
+    assert result.insights == []
+    assert result.recommendations == []
+    assert result.sessionCost["totalTokens"] == 15
+
+
 def test_mcp_beta_summary_and_recurring_tools(tmp_path):
     db_path = tmp_path / "txs.db"
     _seed_beta_transactions(db_path)

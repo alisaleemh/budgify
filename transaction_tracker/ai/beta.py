@@ -241,7 +241,17 @@ def _run_beta_ai(
         ],
     )
     message = response.get("message") or {}
-    parsed = parse_beta_response(str(message.get("content") or ""), citation_lookup)
+    content = str(message.get("content") or "")
+    try:
+        parsed = parse_beta_response(content, citation_lookup)
+    except ValueError:
+        parsed = {
+            "summary": "Budgify could not format a grounded briefing from the model output.",
+            "insights": [],
+            "recommendations": [],
+            "citationIds": [],
+            "estimated": True,
+        }
     usage = _usage_payload(response)
     model_id = getattr(getattr(ai_provider, "config", None), "model", "")
     request_id = str(uuid.uuid4())

@@ -141,6 +141,50 @@ def test_beta_ask_cache_includes_question_and_transactions(tmp_path):
     assert provider.calls == 2
 
 
+def test_beta_handles_raw_chat_completion_shape(tmp_path, monkeypatch):
+    clear_beta_cache()
+    db_path = tmp_path / "txs.db"
+    _seed_beta_transactions(db_path)
+
+    class RawProvider(FakeBetaProvider):
+        def complete_response(self, messages, *, tools=None, tool_choice=None):
+            self.calls += 1
+            context_message = next(message for message in messages if message["role"] == "system" and message["content"].startswith("Budgify MCP context"))
+            context = json.loads(context_message["content"].split("Budgify MCP context:\n", 1)[1])
+            tx_id = context["transactions"][0]["id"]
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(
+                                {
+                                    "summary": "Recent spending is led by groceries.",
+                                    "insights": [
+                                        {
+                                            "title": "Groceries led recent spend",
+                                            "body": "Fresh Market is the largest recent transaction in the MCP context.",
+                                            "why": "This transaction is in the latest briefing range.",
+                                            "citationIds": [tx_id],
+                                        }
+                                    ],
+                                    "recommendations": [],
+                                    "citations": [tx_id],
+                                    "estimated": False,
+                                }
+                            ),
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70},
+            }
+
+    result = generate_beta_briefing(str(db_path), provider=RawProvider(), today=date(2026, 5, 30))
+    assert result.summary == "Recent spending is led by groceries."
+    assert result.sessionCost["totalTokens"] == 70
+    assert result.citations
+
+
 def test_beta_ask_rejects_empty_question(tmp_path):
     with pytest.raises(ValueError):
         ask_beta_question(str(tmp_path / "txs.db"), " ")

@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from transaction_tracker.ai.costs import build_session_cost
-from transaction_tracker.ai.providers import ChatCompletionsProvider, get_chat_provider_from_env
+from transaction_tracker.ai.providers import ChatCompletionsProvider, get_chat_provider_from_env, normalize_completion_response
 from transaction_tracker.mcp_server import (
     _compare_periods_impl,
     _find_transactions_impl,
@@ -240,7 +240,7 @@ def _run_beta_ai(
             {"role": "user", "content": user_prompt},
         ],
     )
-    message = response.get("message") or {}
+    message, usage = normalize_completion_response(response)
     content = str(message.get("content") or "")
     try:
         parsed = parse_beta_response(content, citation_lookup)
@@ -252,7 +252,6 @@ def _run_beta_ai(
             "citationIds": [],
             "estimated": True,
         }
-    usage = _usage_payload(response)
     model_id = getattr(getattr(ai_provider, "config", None), "model", "")
     request_id = str(uuid.uuid4())
     return BetaBriefing(
@@ -305,11 +304,6 @@ def _complete_response(provider: ChatCompletionsProvider, messages: list[dict[st
         return provider.complete_response(messages)
     message = provider.complete(messages)
     return {"message": message, "usage": {}}
-
-
-def _usage_payload(response: dict[str, Any]) -> dict[str, Any]:
-    usage = response.get("usage")
-    return usage if isinstance(usage, dict) else {}
 
 
 def _beta_context(db_path: str, start: date, end: date, prior_start: date, prior_end: date) -> dict[str, Any]:

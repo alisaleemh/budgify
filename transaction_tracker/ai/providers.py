@@ -79,6 +79,20 @@ class CerebrasProvider(ChatCompletionsProvider):
     pass
 
 
+def normalize_completion_response(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not isinstance(data, dict):
+        return {}, {}
+    usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    message = data.get("message") if isinstance(data.get("message"), dict) else None
+    if message is None:
+        choices = data.get("choices") or []
+        if choices:
+            candidate = choices[0].get("message") if isinstance(choices[0], dict) else None
+            if isinstance(candidate, dict):
+                message = candidate
+    return (message or {}, usage)
+
+
 def get_chat_provider_from_env() -> ChatCompletionsProvider:
     config = load_ai_config()
     if config.provider == "cerebras":

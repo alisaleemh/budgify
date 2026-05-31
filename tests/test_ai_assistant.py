@@ -213,6 +213,66 @@ def test_assistant_tool_call_loop_uses_fake_provider(tmp_path):
     assert provider.calls == 2
 
 
+def test_assistant_handles_raw_chat_completion_shape(tmp_path):
+    db_path = tmp_path / "txs.db"
+    _seed_assistant_transactions(db_path)
+
+    class RawProvider(FakeProvider):
+        def complete_response(self, messages, *, tools=None, tool_choice=None):
+            self.calls += 1
+            self.messages.append(messages)
+            if self.calls == 1:
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call-1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "getSpendByMerchant",
+                                            "arguments": json.dumps(
+                                                {
+                                                    "merchant": "Costco",
+                                                    "start_date": "2026-01-01",
+                                                    "end_date": "2026-05-18",
+                                                }
+                                            ),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 100, "completion_tokens": 25, "total_tokens": 125},
+                }
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(
+                                {
+                                    "summary": "Costco spend is $300.00 year to date.",
+                                    "bullets": ["3 transactions", "No unusual spikes"],
+                                    "followup": "Ask for a month-by-month breakdown if needed.",
+                                }
+                            ),
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 80, "completion_tokens": 40, "total_tokens": 120},
+            }
+
+    result = query_finance_assistant(str(db_path), "How much at Costco YTD?", provider=RawProvider())
+    assert result.summary == "Costco spend is $300.00 year to date."
+    assert result.answer.startswith("Costco spend is $300.00 year to date.")
+    assert result.sessionCost["totalTokens"] == 245
+
+
 def test_assistant_endpoint_with_fake_provider(tmp_path, monkeypatch):
     db_path = tmp_path / "txs.db"
     _seed_assistant_transactions(db_path)

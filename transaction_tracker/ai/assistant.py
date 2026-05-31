@@ -8,7 +8,7 @@ from typing import Any
 
 from transaction_tracker.ai.costs import build_session_cost
 from transaction_tracker.ai.finance_tools import ToolValidationError, call_finance_tool, tool_schemas
-from transaction_tracker.ai.providers import ChatCompletionsProvider, get_chat_provider_from_env
+from transaction_tracker.ai.providers import ChatCompletionsProvider, get_chat_provider_from_env, normalize_completion_response
 
 MAX_TOOL_ROUNDS = 5
 
@@ -68,8 +68,7 @@ def query_finance_assistant(
 
     for _ in range(MAX_TOOL_ROUNDS):
         response = provider.complete_response(messages, tools=tool_schemas(), tool_choice="auto") if hasattr(provider, "complete_response") else {"message": provider.complete(messages, tools=tool_schemas(), tool_choice="auto"), "usage": {}}
-        message = response.get("message") or {}
-        usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
+        message, usage = normalize_completion_response(response)
         total_prompt_tokens += int(usage.get("prompt_tokens") or 0)
         total_completion_tokens += int(usage.get("completion_tokens") or 0)
         tool_calls = message.get("tool_calls") or []
@@ -119,8 +118,7 @@ def query_finance_assistant(
         }
     )
     response = provider.complete_response(messages) if hasattr(provider, "complete_response") else {"message": provider.complete(messages), "usage": {}}
-    message = response.get("message") or {}
-    usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
+    message, usage = normalize_completion_response(response)
     total_prompt_tokens += int(usage.get("prompt_tokens") or 0)
     total_completion_tokens += int(usage.get("completion_tokens") or 0)
     cards, tables = _build_structured_blocks(data_used)

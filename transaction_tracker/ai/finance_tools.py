@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from calendar import monthrange
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from statistics import mean, pstdev
 from typing import Any, Callable
 
@@ -296,7 +297,38 @@ def _compare_spend_periods(db_path: str, args: dict[str, Any]) -> dict[str, Any]
             "provider": args.get("provider"),
         }
     )
-    return {"period_a": _period_result(db_path, period_a, shared), "period_b": _period_result(db_path, period_b, shared)}
+    result_a = _period_result(db_path, period_a, shared)
+    result_b = _period_result(db_path, period_b, shared)
+    if result_a["transactions"] == 0 and result_b["transactions"] == 0:
+        fallback = _latest_month_window(db_path, shared)
+        if fallback is not None:
+            latest_start, latest_end, prior_start, prior_end = fallback
+            result_a = _period_result(
+                db_path,
+                {"label": period_a["label"], "start_date": latest_start, "end_date": latest_end},
+                shared,
+            )
+            result_b = _period_result(
+                db_path,
+                {"label": period_b["label"], "start_date": prior_start, "end_date": prior_end},
+                shared,
+            )
+    return {"period_a": result_a, "period_b": result_b}
+
+
+def _latest_month_window(
+    db_path: str,
+    shared: dict[str, Any],
+) -> tuple[date, date, date, date] | None:
+    rows = query_transactions(db_path, **shared, limit=1, sort_by="date", sort_dir="desc")
+    if not rows:
+        return None
+    latest = date.fromisoformat(rows[0]["date"])
+    latest_start = date(latest.year, latest.month, 1)
+    latest_end = date(latest.year, latest.month, monthrange(latest.year, latest.month)[1])
+    prior_end = latest_start - timedelta(days=1)
+    prior_start = date(prior_end.year, prior_end.month, 1)
+    return latest_start, latest_end, prior_start, prior_end
 
 
 def _period_args(value: Any, name: str) -> dict[str, Any]:

@@ -141,6 +141,26 @@ def test_finance_tool_example_questions(tmp_path):
     assert groceries_compare["period_b"]["total"] == 90.0
 
 
+def test_compare_spend_periods_falls_back_to_latest_data_window(tmp_path):
+    db_path = tmp_path / "txs.db"
+    _seed_assistant_transactions(db_path)
+
+    result = call_finance_tool(
+        str(db_path),
+        "compareSpendPeriods",
+        {
+            "period_a": {"label": "Last Month", "start_date": "2026-08-01", "end_date": "2026-08-31"},
+            "period_b": {"label": "This Month", "start_date": "2026-07-01", "end_date": "2026-07-31"},
+            "category": "groceries",
+        },
+    )
+
+    assert result["period_a"]["total"] == 90.0
+    assert result["period_b"]["total"] == 70.0
+    assert result["period_a"]["transactions"] == 1
+    assert result["period_b"]["transactions"] == 1
+
+
 class FakeProvider:
     def __init__(self):
         self.calls = 0

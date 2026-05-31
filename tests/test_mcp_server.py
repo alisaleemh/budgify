@@ -238,6 +238,22 @@ def test_budgify_compare_periods(tmp_path):
     assert result["topDrivers"]
 
 
+def test_budgify_compare_periods_falls_back_to_latest_data_window(tmp_path):
+    db_path = _setup_db(tmp_path)
+
+    async def run():
+        return await budgify_compare_periods(
+            str(db_path),
+            periodA={"startDate": "2025-05-01", "endDate": "2025-05-31"},
+            periodB={"startDate": "2025-04-01", "endDate": "2025-04-30"},
+            groupBy="category",
+        )
+
+    result = anyio.run(run)
+    assert result["periodA"]["totalCents"] == 5500
+    assert result["periodB"]["totalCents"] == 3000
+
+
 def test_budgify_query_bundle_max_subqueries(tmp_path):
     db_path = _setup_db(tmp_path)
 

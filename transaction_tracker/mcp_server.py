@@ -5,6 +5,7 @@ import os
 import re
 import sqlite3
 from collections import defaultdict
+from calendar import monthrange
 from datetime import date, timedelta
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -437,6 +438,12 @@ def _compare_periods_impl(
     b_start, b_end = _require_range(periodB.get("startDate"), periodB.get("endDate"))
     a_rows = _rows(dbPath, a_start, a_end, limit=1000)
     b_rows = _rows(dbPath, b_start, b_end, limit=1000)
+    if not a_rows and not b_rows:
+        fallback = _latest_month_window(dbPath)
+        if fallback is not None:
+            a_start, a_end, b_start, b_end = fallback
+            a_rows = _rows(dbPath, a_start, a_end, limit=1000)
+            b_rows = _rows(dbPath, b_start, b_end, limit=1000)
     a_total = sum(row["amountCents"] for row in a_rows)
     b_total = sum(row["amountCents"] for row in b_rows)
     drivers = []
@@ -460,6 +467,18 @@ def _compare_periods_impl(
         "deltaCents": a_total - b_total,
         "topDrivers": drivers[:_limit(limit)],
     })
+
+
+def _latest_month_window(dbPath: str | None) -> tuple[date, date, date, date] | None:
+    rows = query_transactions(_db_path(dbPath), sort_by="date", sort_dir="desc", limit=1)
+    if not rows:
+        return None
+    latest = date.fromisoformat(str(rows[0]["date"]))
+    latest_start = date(latest.year, latest.month, 1)
+    latest_end = date(latest.year, latest.month, monthrange(latest.year, latest.month)[1])
+    prior_end = latest_start - timedelta(days=1)
+    prior_start = date(prior_end.year, prior_end.month, 1)
+    return latest_start, latest_end, prior_start, prior_end
 
 
 def _top_drivers_impl(

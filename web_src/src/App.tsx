@@ -4,7 +4,6 @@ import { AppLayout } from "@/components/AppLayout";
 import { BetaHome } from "@/components/beta/BetaHome";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { AssistantPanel } from "@/components/dashboard/AssistantPanel";
 import { ChartCard } from "@/components/dashboard/ChartCard";
 import { FiltersPanel } from "@/components/dashboard/FiltersPanel";
 import { LoadingState } from "@/components/dashboard/LoadingState";
@@ -382,10 +381,6 @@ function DashboardApp() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-
-        <section id="assistant" className="grid gap-4">
-          <AssistantPanel />
-        </section>
 
         {!data && loading ? (
           <LoadingState />

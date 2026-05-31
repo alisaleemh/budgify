@@ -1,4 +1,4 @@
-import { BarChart3, Bot, Database, Menu, RefreshCw, Sparkles, Table2 } from "lucide-react";
+import { BarChart3, Database, Menu, RefreshCw, Sparkles, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -27,7 +27,6 @@ const navItems = [
   { href: "/beta", label: "AI Beta", icon: Sparkles },
   { href: "#overview", label: "Overview", icon: BarChart3 },
   { href: "#charts", label: "Charts", icon: Database },
-  { href: "#assistant", label: "Ask Budgify", icon: Bot },
   { href: "#transactions", label: "Transactions", icon: Table2 },
 ];
 

@@ -72,14 +72,16 @@ export function AppLayout({
   return (
     <div className="dashboard-shell">
       <div className="dashboard-main">
-        <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] w-64 shrink-0 rounded-2xl border bg-white p-4 shadow-sm lg:block">
-          <div>
+        <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] w-64 shrink-0 rounded-2xl border bg-white p-4 shadow-sm lg:flex lg:flex-col">
+          <div className="shrink-0">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{eyebrow}</p>
             <h1 className="mt-2 text-xl font-semibold tracking-normal">{title}</h1>
           </div>
-          <Separator className="my-4" />
-          <SidebarNav onNavigate={onNavigate} />
-          <div className="absolute bottom-4 left-4 right-4 grid gap-3">
+          <Separator className="my-4 shrink-0" />
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <SidebarNav onNavigate={onNavigate} />
+          </div>
+          <div className="mt-4 grid shrink-0 gap-3">
             <div className="rounded-xl border bg-zinc-50 p-3">
               <p className="text-xs text-muted-foreground">Database</p>
               <p className="mt-1 truncate text-sm font-medium">budgify.db</p>

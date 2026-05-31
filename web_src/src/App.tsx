@@ -461,8 +461,6 @@ function DashboardApp() {
               </div>
             </section>
 
-            <AssistantPanel />
-
             <section id="transactions">
               <TransactionTable
                 rows={data?.transactions || []}

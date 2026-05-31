@@ -92,6 +92,11 @@ function safeString(value: unknown): string {
   return String(value);
 }
 
+function looksLikeStructuredJson(text: string) {
+  const trimmed = text.trim();
+  return trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith("```");
+}
+
 function summarizeResult(result: Record<string, unknown>) {
   if (Array.isArray(result.transactions)) return `${result.transactions.length} transactions`;
   if (Array.isArray(result.categories)) return `${result.categories.length} categories`;
@@ -434,11 +439,16 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
           <CompactAnswer summary={message.summary} bullets={message.bullets} followup={message.followup} />
           <StructuredCards cards={message.cards || []} />
           <AssistantTables tables={message.tables || []} />
-          {!message.summary && !message.bullets?.length ? (
+          {!message.summary && !message.bullets?.length && !looksLikeStructuredJson(displayedText) ? (
             <MarkdownRenderer
               content={displayedText}
               className={cn("prose prose-sm sm:prose-base dark:prose-invert max-w-none", !message.cards?.length && !message.tables?.length && "mt-0")}
             />
+          ) : null}
+          {!message.summary && !message.bullets?.length && looksLikeStructuredJson(displayedText) ? (
+            <p className={cn("text-sm leading-6 text-muted-foreground", !message.cards?.length && !message.tables?.length && "mt-0")}>
+              I couldn&apos;t format that answer cleanly. Please try again.
+            </p>
           ) : null}
           <ToolResultCollapse dataUsed={message.dataUsed || []} />
         </div>

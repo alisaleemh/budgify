@@ -392,21 +392,49 @@ def _message_content(message: dict[str, Any]) -> str:
     return content.strip()
 
 
+def _unfence_json(content: str) -> str:
+    if not content.startswith("```"):
+        return content
+
+    lines = content.splitlines()
+    if len(lines) < 2:
+        return content
+
+    body = lines[1:]
+    if body and body[-1].strip().startswith("```"):
+        body = body[:-1]
+    return "\n".join(body).strip()
+
+
 def _parse_compact_response(message: dict[str, Any]) -> dict[str, Any]:
     content = _message_content(message)
     if not content:
         return {"answer": "", "summary": "", "bullets": [], "followup": ""}
-    if content.startswith("{"):
+    candidates = [content]
+    unfenced = _unfence_json(content)
+    if unfenced != content:
+        candidates.append(unfenced)
+
+    for candidate in candidates:
+        if not candidate.startswith("{"):
+            continue
         try:
-            parsed = json.loads(content)
+            parsed = json.loads(candidate)
         except json.JSONDecodeError:
-            parsed = None
+            continue
         if isinstance(parsed, dict):
             summary = _clean_compact_line(parsed.get("summary"))
             bullets = [_clean_compact_line(item) for item in _coerce_list(parsed.get("bullets"))][:3]
             followup = _clean_compact_line(parsed.get("followup"))
-            answer = _compose_answer(summary, bullets, followup, content)
+            answer = _compose_answer(summary, bullets, followup, candidate)
             return {"answer": answer, "summary": summary, "bullets": bullets, "followup": followup}
+    if content.startswith("{") or content.startswith("```"):
+        return {
+            "answer": "I couldn't format that answer cleanly. Please ask again.",
+            "summary": "",
+            "bullets": [],
+            "followup": "",
+        }
     return {"answer": content, "summary": "", "bullets": [], "followup": ""}
 
 

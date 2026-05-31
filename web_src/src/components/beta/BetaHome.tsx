@@ -87,7 +87,7 @@ export function BetaHome() {
                 </div>
                 <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-tight md:text-5xl">Your money briefing</h1>
                 <p className="mt-3 max-w-2xl text-lg text-muted-foreground">
-                  Budgify reads your ledger through MCP, explains what changed, and shows the transactions behind important claims.
+                  Budgify reads your recent spending, explains what changed, and shows the transactions behind important claims.
                 </p>
               </div>
             <div className="rounded-2xl border bg-zinc-950 px-4 py-3 text-sm text-white shadow-sm">
@@ -108,7 +108,7 @@ export function BetaHome() {
             <Card className="rounded-[1.5rem]">
               <CardContent className="flex items-center gap-3 p-6 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
-                Building a grounded MCP briefing...
+                Building a grounded money briefing...
               </CardContent>
             </Card>
           ) : active ? (
@@ -189,7 +189,7 @@ export function BetaHome() {
               <CardContent>
                 <p className="text-lg font-medium">{answer.summary}</p>
                 <p className="mt-3 text-sm text-emerald-100">
-                  Grounded in {answer.citations.length} cited transaction{answer.citations.length === 1 ? "" : "s"} from MCP context.
+                  Grounded in {answer.citations.length} cited transaction{answer.citations.length === 1 ? "" : "s"} from your transaction data.
                 </p>
               </CardContent>
             </Card>
@@ -259,7 +259,7 @@ function MeaningCard({ briefing }: { briefing: BetaBriefing }) {
         <ShieldCheck className="h-5 w-5 text-emerald-300" />
         <p className="text-lg font-medium">{briefing.summary}</p>
         <p className="text-sm text-stone-300">
-          This beta treats MCP transaction data as source of truth. If the ledger is incomplete, Budgify marks conclusions as estimates and avoids certainty.
+          This beta treats your transaction data as the source of truth. If the ledger is incomplete, Budgify marks conclusions as estimates and avoids certainty.
         </p>
       </CardContent>
     </Card>

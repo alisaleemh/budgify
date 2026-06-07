@@ -36,6 +36,7 @@ def test_model_pricing_and_cost_estimation(monkeypatch):
 
 def test_ai_status_includes_pricing(monkeypatch):
     monkeypatch.setattr(ai_config, "get_model_pricing", lambda model: ModelPricing(model=model, prompt_per_token=0.1, completion_per_token=0.2))
-    status = ai_config.ai_status({"AI_PROVIDER": "cerebras", "AI_MODEL": "zai-glm-4.7"})
+    status = ai_config.ai_status({"AI_PROVIDER": "cerebras", "AI_MODEL": "zai-glm-4.7", "BUDGIFY_DEPLOY_COMMIT": "abc1234"})
     assert status["pricing"]["promptPerMillion"] == 100000.0
     assert status["pricing"]["completionPerMillion"] == 200000.0
+    assert status["deployCommit"] == "abc1234"

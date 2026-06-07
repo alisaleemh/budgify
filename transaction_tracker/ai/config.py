@@ -51,10 +51,13 @@ def load_ai_config(environ: dict[str, str] | None = None) -> AIConfig:
 def ai_status(environ: dict[str, str] | None = None) -> dict[str, object]:
     config = load_ai_config(environ)
     pricing = get_model_pricing(config.model)
+    env = environ or os.environ
+    deploy_commit = (env.get("BUDGIFY_DEPLOY_COMMIT") or env.get("GIT_COMMIT") or "").strip() or None
     return {
         "provider": config.provider,
         "baseUrl": config.base_url,
         "model": config.model,
         "apiKeyPresent": config.api_key_present,
+        "deployCommit": deploy_commit,
         "pricing": pricing.as_dict() if pricing else None,
     }

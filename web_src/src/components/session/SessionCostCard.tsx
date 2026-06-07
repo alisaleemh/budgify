@@ -1,4 +1,4 @@
-import { Database, DollarSign, RefreshCw, Sparkles } from "lucide-react";
+import { Database, DollarSign, Hash, RefreshCw, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatSessionCost, type SessionCostSummary } from "@/lib/session-cost";
@@ -51,6 +51,12 @@ export function SessionCostCard({
             <Sparkles className="h-4 w-4 text-emerald-800" />
             {priceLabel}
           </p>
+          {status?.deployCommit ? (
+            <p className="flex items-center gap-2">
+              <Hash className="h-4 w-4" />
+              Build <span className="font-mono text-foreground">{status.deployCommit.slice(0, 7)}</span>
+            </p>
+          ) : null}
           <p className="flex items-center gap-2">
             <RefreshCw className="h-4 w-4" />
             Refresh-safe. Cached responses do not add cost.

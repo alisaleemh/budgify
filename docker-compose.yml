@@ -8,6 +8,7 @@ services:
     environment:
       BUDGIFY_PASSWORD_FILE: /app/password.txt
       BUDGIFY_PASSWORD_KEY: ${BUDGIFY_PASSWORD_KEY:?Set BUDGIFY_PASSWORD_KEY}
+      BUDGIFY_DEPLOY_COMMIT: ${BUDGIFY_DEPLOY_COMMIT:-}
     ports:
       - "8000:8000"
     volumes:

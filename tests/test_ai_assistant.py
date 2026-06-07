@@ -53,7 +53,7 @@ def test_ai_config_defaults_to_cerebras_and_key_file(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.expanduser", lambda self: key_file if str(self) == "~/api-key" else self)
 
     config = load_ai_config({"AI_API_KEY_FILE": "~/api-key"})
-    status = ai_status({"AI_API_KEY_FILE": "~/api-key"})
+    status = ai_status({"AI_API_KEY_FILE": "~/api-key", "BUDGIFY_DEPLOY_COMMIT": "5406360"})
 
     assert config.provider == "cerebras"
     assert isinstance(CerebrasProvider(config), CerebrasProvider)
@@ -63,6 +63,7 @@ def test_ai_config_defaults_to_cerebras_and_key_file(tmp_path, monkeypatch):
         "baseUrl": "https://api.cerebras.ai/v1",
         "model": "zai-glm-4.7",
         "apiKeyPresent": True,
+        "deployCommit": "5406360",
         "pricing": {
             "model": "zai-glm-4.7",
             "currency": "USD",

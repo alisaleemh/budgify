@@ -75,6 +75,7 @@ export interface AssistantStatus {
   baseUrl: string;
   model: string;
   apiKeyPresent: boolean;
+  deployCommit?: string | null;
   pricing?: {
     model: string;
     currency: string;

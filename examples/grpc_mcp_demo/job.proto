@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package jobdemo;
+
+import "google/protobuf/empty.proto";
+
+message Job {
+  string title = 1;
+  string description = 2;
+}
+
+message JobRequest {
+  string title = 1;
+}
+
+message JobResponse {
+  Job job = 1;
+}
+
+service JobService {
+  rpc GetJob(JobRequest) returns (JobResponse);
+  rpc CreateJob(Job) returns (JobResponse);
+  rpc DeleteJob(JobRequest) returns (.google.protobuf.Empty);
+}

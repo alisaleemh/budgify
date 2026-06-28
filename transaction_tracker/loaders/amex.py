@@ -1,16 +1,27 @@
-# transaction_tracker/loaders/amex.py
+from pathlib import Path
 import re
+
 import pandas as pd
+
 from transaction_tracker.loaders.base import BaseLoader
 from transaction_tracker.core.models import Transaction
 
 _PAYMENT_RX    = re.compile(r"payment received", re.I)
 _CLEAN_AMOUNT  = re.compile(r"[^\d\-\.]")
 
+
+def _excel_engine(file_path: str) -> str:
+    suffix = Path(file_path).suffix.lower()
+    if suffix == ".xls":
+        return "xlrd"
+    return "openpyxl"
+
+
 class AmexLoader(BaseLoader):
     def load(self, file_path, include_payments=False):
         # 1. Detect header row
-        raw = pd.read_excel(file_path, header=None, engine='xlrd')
+        engine = _excel_engine(file_path)
+        raw = pd.read_excel(file_path, header=None, engine=engine)
         header_row = None
         for idx, row in raw.iterrows():
             vals = [str(v).lower() for v in row.values if pd.notna(v)]
@@ -24,7 +35,7 @@ class AmexLoader(BaseLoader):
         df = pd.read_excel(
             file_path,
             header=header_row,
-            engine='xlrd',
+            engine=engine,
             parse_dates=False
         )
 

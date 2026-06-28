@@ -1,3 +1,4 @@
+from openpyxl import Workbook
 import pandas as pd
 
 from transaction_tracker.loaders.amex import AmexLoader
@@ -62,3 +63,22 @@ def test_amex_loader_falls_back_to_description_when_merchant_missing(monkeypatch
 
     assert len(txs) == 1
     assert txs[0].merchant == 'Coffee Shop'
+
+
+def test_amex_loader_reads_xlsx_exports(tmp_path):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(['Ignored', 'Ignored', 'Ignored'])
+    sheet.append(['Still', 'Ignored', 'Values'])
+    sheet.append(['Date', 'Description', 'Amount', 'Merchant'])
+    sheet.append(['2026-06-26', 'Restaurant purchase', '$12.34', 'Cafe'])
+
+    file_path = tmp_path / 'amex-ytd-2026.xlsx'
+    workbook.save(file_path)
+
+    loader = AmexLoader()
+    txs = list(loader.load(str(file_path)))
+
+    assert len(txs) == 1
+    assert txs[0].date.isoformat() == '2026-06-26'
+    assert txs[0].merchant == 'Cafe'

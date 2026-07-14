@@ -23,6 +23,9 @@ jobs:
       APP_DIR: /srv/budgify
       DEPLOY_FLAG: /srv/budgify/.deploy-enabled
       DEPLOY_MODE: ${{ inputs.mode }}
+      BUDGIFY_COMPOSE_FILE: /opt/apps/docker-compose.yml
+      BUDGIFY_COMPOSE_ENV_FILE: /opt/apps/.env
+      BUDGIFY_COMPOSE_SERVICES: budgify-web budgify-sync
 
     steps:
       - name: Smoke test
@@ -32,7 +35,9 @@ jobs:
           hostname
           docker version
           docker compose version
-          docker compose config
+          read -r -a services <<< "$BUDGIFY_COMPOSE_SERVICES"
+          docker compose --env-file "$BUDGIFY_COMPOSE_ENV_FILE" -f "$BUDGIFY_COMPOSE_FILE" config --quiet
+          docker compose --env-file "$BUDGIFY_COMPOSE_ENV_FILE" -f "$BUDGIFY_COMPOSE_FILE" config "${services[@]}"
 
       - name: Decide whether to deploy
         id: gate

@@ -59,4 +59,6 @@ jobs:
         if: steps.gate.outputs.deploy == 'true'
         run: |
           cd "$APP_DIR"
-          ./deploy.sh
+          git fetch origin main
+          git reset --hard origin/main
+          exec ./deploy.sh

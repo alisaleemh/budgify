@@ -17,9 +17,6 @@ if [[ ! -f "$compose_env_file" ]]; then
   exit 1
 fi
 
-git fetch origin main
-git reset --hard origin/main
-
 deploy_commit="$(git rev-parse --short HEAD)"
 export BUDGIFY_DEPLOY_COMMIT="$deploy_commit"
 

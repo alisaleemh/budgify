@@ -460,8 +460,6 @@ export default function App() {
               </div>
             </section>
 
-            <AssistantPanel />
-
             <section id="transactions">
               <TransactionTable
                 rows={data?.transactions || []}
